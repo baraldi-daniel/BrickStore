@@ -1,0 +1,20 @@
+# Este arquivo é um MODELO. O notebook setup/06_app copia a pasta app/ para o workspace e
+# grava os valores reais (marca, catálogo, schema, Genie...) no app.yaml da cópia implantada.
+command: ["python", "main.py"]
+env:
+  - name: NB_MARCA
+    value: "BrickStore"
+  - name: NB_CATALOG
+    value: "brickstore"
+  - name: NB_SCHEMA
+    value: "varejo"
+  - name: NB_LLM
+    value: "databricks-llama-4-maverick"
+  - name: NB_EMBEDDING
+    value: "databricks-qwen3-embedding-0-6b"
+  - name: NB_VS_ENDPOINT
+    value: "brickstore_vs"
+  - name: NB_GENIE_SPACE_ID
+    value: ""
+  - name: NB_WAREHOUSE_ID
+    valueFrom: sql-warehouse

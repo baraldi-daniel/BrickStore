@@ -1,0 +1,170 @@
+{
+ "tabelas": {
+  "estilos": {
+   "comentario": "Estilos de decoracao e moda da BrickStore (paleta, materiais, ocasiao e cores).",
+   "duplos": [],
+   "inteiros": [],
+   "nulos_texto": [],
+   "cdf": false,
+   "linhas": 13
+  },
+  "produtos": {
+   "comentario": "Catálogo de produtos da BrickStore (fictício). texto_busca alimenta o Vector Search.",
+   "duplos": [
+    "preco",
+    "preco_promocional",
+    "avaliacao",
+    "popularidade",
+    "vendedor_reputacao"
+   ],
+   "inteiros": [
+    "parcelas_sem_juros",
+    "n_avaliacoes",
+    "estoque"
+   ],
+   "nulos_texto": [
+    "imagem_path"
+   ],
+   "cdf": true,
+   "linhas": 3000
+  },
+  "clientes": {
+   "comentario": "Clientes da BrickStore (fictícios). Programa de fidelidade: segmento Bronze, Prata, Ouro ou Diamante.",
+   "duplos": [],
+   "inteiros": [],
+   "nulos_texto": [],
+   "cdf": false,
+   "linhas": 20000
+  },
+  "pedidos": {
+   "comentario": "Pedidos da BrickStore (fictícios). Cada pedido é uma cesta para as regras de quem comprou também comprou.",
+   "duplos": [
+    "valor_total",
+    "frete"
+   ],
+   "inteiros": [
+    "parcelas"
+   ],
+   "nulos_texto": [],
+   "cdf": false,
+   "linhas": 82834
+  },
+  "itens_pedido": {
+   "comentario": "Itens dos pedidos da BrickStore (fictícios). Cestas com complementos de estilo.",
+   "duplos": [
+    "preco_unitario",
+    "desconto"
+   ],
+   "inteiros": [
+    "quantidade"
+   ],
+   "nulos_texto": [],
+   "cdf": false,
+   "linhas": 189978
+  },
+  "eventos_navegacao": {
+   "comentario": "Eventos de navegacao na loja online da BrickStore (visualizou, adicionou_carrinho, favoritou).",
+   "duplos": [],
+   "inteiros": [],
+   "nulos_texto": [],
+   "cdf": false,
+   "linhas": 256040
+  },
+  "perfis_demo": {
+   "comentario": "Perfis de demonstracao da tela de entrada do App (clientes reais da base).",
+   "duplos": [],
+   "inteiros": [
+    "n_pedidos"
+   ],
+   "nulos_texto": [],
+   "cdf": false,
+   "linhas": 7
+  }
+ },
+ "pks": [
+  {
+   "tabela": "estilos",
+   "coluna": "estilo_id",
+   "nome": "pk_estilos"
+  },
+  {
+   "tabela": "produtos",
+   "coluna": "produto_id",
+   "nome": "pk_produtos"
+  },
+  {
+   "tabela": "clientes",
+   "coluna": "cliente_id",
+   "nome": "pk_clientes"
+  },
+  {
+   "tabela": "pedidos",
+   "coluna": "pedido_id",
+   "nome": "pk_pedidos"
+  },
+  {
+   "tabela": "perfis_demo",
+   "coluna": "cliente_id",
+   "nome": "pk_perfis_demo"
+  },
+  {
+   "tabela": "eventos_navegacao",
+   "coluna": "evento_id",
+   "nome": "pk_eventos"
+  }
+ ],
+ "fks": [
+  {
+   "tabela": "pedidos",
+   "coluna": "cliente_id",
+   "ref_tabela": "clientes",
+   "ref_coluna": "cliente_id",
+   "nome": "fk_ped_cliente"
+  },
+  {
+   "tabela": "itens_pedido",
+   "coluna": "pedido_id",
+   "ref_tabela": "pedidos",
+   "ref_coluna": "pedido_id",
+   "nome": "fk_item_pedido"
+  },
+  {
+   "tabela": "itens_pedido",
+   "coluna": "produto_id",
+   "ref_tabela": "produtos",
+   "ref_coluna": "produto_id",
+   "nome": "fk_item_produto"
+  },
+  {
+   "tabela": "eventos_navegacao",
+   "coluna": "cliente_id",
+   "ref_tabela": "clientes",
+   "ref_coluna": "cliente_id",
+   "nome": "fk_evt_cliente"
+  },
+  {
+   "tabela": "eventos_navegacao",
+   "coluna": "produto_id",
+   "ref_tabela": "produtos",
+   "ref_coluna": "produto_id",
+   "nome": "fk_evt_produto"
+  },
+  {
+   "tabela": "produtos",
+   "coluna": "estilo_id",
+   "ref_tabela": "estilos",
+   "ref_coluna": "estilo_id",
+   "nome": "fk_prod_estilo"
+  },
+  {
+   "tabela": "perfis_demo",
+   "coluna": "cliente_id",
+   "ref_tabela": "clientes",
+   "ref_coluna": "cliente_id",
+   "nome": "fk_perfil_cliente"
+  }
+ ],
+ "marca": "BrickStore",
+ "dominio": "brickstore.com.br",
+ "referencia": "2026-11-20"
+}

@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  BrickStore · configuração do lab
+#
+#  Todos os notebooks leem este arquivo (via `_config`). Ajuste aqui se precisar.
+#  Os padrões já funcionam num workspace Databricks novo.
+#
+#  Workspace corporativo (compartilhado)? Ajuste 4 linhas:
+#    catalog      → um catálogo seu (com USE CATALOG + CREATE SCHEMA), ex.: time_dados
+#    app_name     → um nome só seu, ex.: brickstore-maria   (Apps e endpoints são únicos no workspace)
+#    mcp_app_name → idem, começando com mcp-, ex.: mcp-brickstore-maria
+#    warehouse_id → o id de um SQL warehouse que você pode usar (opcional)
+#  Os widgets no topo do notebook INSTALAR mostram estes valores e também podem ser
+#  alterados na hora; o valor digitado no widget vale só para aquela execução.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Unity Catalog: onde ficam tabelas, volumes, modelos e índices
+catalog: brickstore          # usa o existente; se não existir, tenta criar (ou usa "workspace" quando ele existe)
+schema: varejo
+
+# Loja fictícia
+marca: BrickStore            # aparece no App, no Genie, nos PDFs e nos e-mails fictícios
+
+# Databricks Apps (o lab usa 2: a loja e o MCP)
+app_name: brickstore         # App da loja
+mcp_app_name: mcp-detetive-produtos   # App só do MCP (o prefixo mcp- faz ele aparecer no Playground)
+
+# Modelos (Foundation Model APIs)
+llm: databricks-llama-4-maverick                    # visão + tool calling (Detetive e agentes)
+embedding: databricks-qwen3-embedding-0-6b          # embeddings multilíngues do Vector Search
+llm_juiz: databricks-meta-llama-3-3-70b-instruct    # juiz dos guardrails (cota separada do LLM principal)
+
+# Roteador de LLM no Unity Gateway (model service <catalog>.<schema>.assistente_llm)
+# 50/50: a cada pergunta um dos dois modelos responde (o chat mostra qual, no selo 🔀)
+roteador_destino_a: system.ai.llama-4-maverick
+roteador_destino_a_pct: 50
+roteador_destino_b: system.ai.qwen3-next-80b-a3b-instruct
+roteador_destino_b_pct: 50
+roteador_fallback: system.ai.gpt-oss-120b
+
+# Extras do workspace corporativo (veja docs/ENTERPRISE.md)
+enterprise: false            # true = liga o SAC por voz com Whisper (endpoint de Model Serving próprio)
+whisper_modelo: openai/whisper-large-v3-turbo   # modelo do Hugging Face servido no endpoint <app_name>-whisper
+whisper_compute: CPU         # CPU (padrão, mais barato) ou GPU_SMALL (mais rápido em áudios longos). Scale to zero nos dois
+
+# Infraestrutura
+vs_endpoint: brickstore_vs   # criado se não existir; só se o workspace NÃO permitir criar (limite de 1) reaproveita um existente
+warehouse_id:                # vazio = usa o primeiro SQL warehouse serverless do workspace

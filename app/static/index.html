@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Loja</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect rx='7' width='32' height='32' fill='%230b2026'/><path d='M7 11 16 6l9 5-9 5z' fill='%23ff3621'/><path d='M7 16.5l9 5 9-5' fill='none' stroke='%23ff5f46' stroke-width='2.6' stroke-linejoin='round'/><path d='M7 21.5l9 5 9-5' fill='none' stroke='%23ff3621' stroke-width='2.6' stroke-linejoin='round' opacity='.7'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+  <header id="topo">
+    <div class="topo-linha">
+      <a class="marca" href="#/inicio" aria-label="Início">
+        <span class="logo-mark" id="logo-mark"></span>
+        <span class="marca-nome" id="marca-nome">Loja</span>
+      </a>
+
+      <nav id="menu-principal" aria-label="Principal">
+        <div class="dd" id="dd-dep">
+          <button class="dd-btn" id="btn-dep" aria-haspopup="true">Departamentos <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></button>
+          <div class="dd-menu" id="menu-dep"></div>
+        </div>
+        <a href="#/estilos" data-rota="estilos">Estilos</a>
+        <a href="#/detetive" data-rota="detetive">Detetive de produtos</a>
+        <a href="#/pedidos" data-rota="pedidos">Meus pedidos</a>
+        <a href="#/estudio" data-rota="estudio">Estúdio</a>
+      </nav>
+
+      <form class="busca" id="form-busca" role="search">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="campo-busca" type="search" placeholder="Buscar produtos, marcas e muito mais…" autocomplete="off" aria-label="Buscar produtos">
+      </form>
+
+      <div class="acoes-topo">
+        <button class="avatar-btn" id="btn-perfil" title="Trocar perfil" aria-label="Trocar perfil"></button>
+        <a class="sair-btn" href="/sair" title="Sair (faz login de novo e renova as permissões)" aria-label="Sair">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5M5 12h11"/></svg>
+          <span>Sair</span></a>
+        <button class="sacola-btn" id="btn-sacola" aria-label="Abrir sacola">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="M5 8h14l-1 12.5H6z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></svg>
+          <span class="contador oculto" id="contador">0</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main id="app"></main>
+
+  <div id="toasts" aria-live="polite"></div>
+
+  <div id="gaveta-fundo"></div>
+  <aside id="gaveta" aria-label="Sacola de compras">
+    <div class="gaveta-cab"><h2>Sacola</h2><button class="btn-icone" id="fechar-gaveta" aria-label="Fechar sacola">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+    <div class="gaveta-itens" id="gaveta-itens"></div>
+    <div class="gaveta-resumo" id="gaveta-resumo"></div>
+  </aside>
+
+  <section id="tela-perfis" aria-label="Quem está comprando?">
+    <button class="fechar-perfis oculto" id="fechar-perfis" title="Fechar (continuar com o perfil atual)" aria-label="Fechar">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    <div class="perfis-in">
+      <div class="logo-grande"><span class="logo-mark" id="logo-perfis"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4 28 10.5 16 17 4 10.5Z" fill="#FF3621"/><path d="M4 15.5 16 22 28 15.5" fill="none" stroke="#FF5F46" stroke-width="3.2" stroke-linejoin="round"/><path d="M4 21.2 16 27.7 28 21.2" fill="none" stroke="#FF3621" stroke-width="3.2" stroke-linejoin="round" opacity=".7"/></svg></span><span id="marca-perfis">Loja</span></div>
+      <h1>Quem está comprando?</h1>
+      <p>Escolha um perfil para ver ofertas personalizadas, seus pedidos e as recomendações do seu estilo.</p>
+      <div class="perfis" id="lista-perfis"></div>
+    </div>
+  </section>
+
+  <button id="fab-chat" class="fab-chat" aria-controls="chat">
+    <span class="fab-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg></span>Assistente
+  </button>
+  <section id="chat" class="oculto" aria-label="Assistente de compras">
+    <div class="chat-cab">
+      <span class="chat-ico" aria-hidden="true">✦</span>
+      <div><b>Assistente de compras</b><small>Detetive de produtos · Vector Search · Central de ajuda</small></div>
+      <button id="nova-conversa" class="btn-icone" title="Nova conversa" aria-label="Nova conversa">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg></button>
+      <button id="fechar-chat" class="btn-icone" aria-label="Fechar assistente">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="chat-msgs" id="chat-msgs"></div>
+    <div class="chat-sugestoes" id="chat-sugestoes"></div>
+    <div class="anexo-preview oculto" id="anexo-preview"></div>
+    <form class="chat-form" id="chat-form">
+      <label class="chat-anexar" title="Anexar foto para o Detetive de produtos" aria-label="Anexar foto">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5 12.3 20.2a5.5 5.5 0 0 1-7.8-7.8l9.2-9.2a3.7 3.7 0 0 1 5.2 5.2l-9.2 9.2a1.8 1.8 0 0 1-2.6-2.6l8.5-8.5"/></svg>
+        <input type="file" accept="image/*" id="chat-arquivo" hidden>
+      </label>
+      <input type="text" id="chat-input" placeholder="Pergunte ou peça uma recomendação…" autocomplete="off" aria-label="Mensagem">
+      <button class="chat-enviar" aria-label="Enviar">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+    </form>
+  </section>
+
+  <script src="/static/produtos.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
