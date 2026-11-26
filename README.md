@@ -92,6 +92,9 @@ algo só numa execução.
 | `roteador_*` | Llama 4 Maverick 50% / Qwen3-Next 50%, fallback GPT OSS 120B | Destinos e percentuais do model service no Unity Gateway. |
 | `vs_endpoint` | `brickstore_vs` | Criado se não existir; só se o workspace **não permitir** criar (limite de 1) reaproveita um existente. |
 | `warehouse_id` | vazio | Vazio = usa o primeiro SQL warehouse serverless do workspace. |
+| `enterprise` | `false` | `true` liga o **SAC por voz com Whisper** (só workspace corporativo). Com `false`, o App funciona igual, sem essa parte. |
+| `whisper_modelo` | `openai/whisper-large-v3-turbo` | Modelo do Hugging Face servido no endpoint `<app_name>-whisper`. |
+| `whisper_compute` | `CPU` | `CPU` (padrão, mais barato) ou `GPU_SMALL` (mais rápido em áudios longos). Scale to zero nos dois. |
 
 O notebook é **idempotente**: dá para rodar de novo à vontade. Para apagar tudo, use `99_limpar_ambiente`.
 
@@ -130,7 +133,8 @@ INSTALAR
  ├─ 6. setup/03d_previsao_vendas .......... ai_forecast: receita por departamento, próximos 30 dias, intervalo de 80%
  ├─ 7. setup/04_vector_search ............. produtos_index + ajuda_index (Delta Sync, embeddings gerenciados)
  ├─ 8. setup/05c_lakebase ................. Lakebase (Postgres OLTP) p/ pedidos novos e memória do chat + registro no UC + views vw_*_todos (ao vivo) + synced tables
- ├─ 9. setup/05_genie ..................... Genie Agent via API (tabelas, instruções, joins) + Gmail/Calendar/Drive
+ ├─ 9. setup/05a_sac_voz .................. SAC por voz: 6 ligações → Whisper → ai_classify / ai_analyze_sentiment / ai_extract (só com enterprise: true)
+ ├─ 9b. setup/05_genie .................... Genie Agent via API (tabelas, instruções, joins) + Gmail/Calendar/Drive
  ├─ 10. setup/05b_roteador_llm ............ model service no Unity Gateway (routing + fallback + inference table) + tabelas de governança
  ├─ 11. setup/06_app ...................... Databricks App (supervisor + agentes + guardrails) + MCP "Detetive de Produtos"
  ├─ 12. setup/06b_app_mcp ................. App próprio do MCP: mcp-detetive-produtos (aparece no Playground)
@@ -168,6 +172,9 @@ Tudo é **fictício** e determinístico.
 | View | `vw_pedidos_todos`, `vw_itens_pedido_todos`, `vw_solicitacoes_todas` | Histórico Delta **+ pedidos e solicitações novos do App, lidos ao vivo do Lakebase** (coluna `origem`). É o que o Genie, o Agente Analista e *Meus pedidos* consultam |
 | Synced table | `lb_produtos`, `lb_recomendacoes` | Cópias Delta → Postgres (snapshot) para leitura OLTP de baixa latência |
 | Tabela | `solicitacoes_atendimento` | Trocas, devoluções, garantias e reclamações abertas pelo Agente de Pós-venda (com protocolo) |
+| Tabela | `atendimentos_voz` | Só com `enterprise: true`: ligações do SAC transcritas pelo **Whisper** + categoria, sentimento e pedido (funções de IA) |
+| Modelo UC / Endpoint | `whisper` / `<app>-whisper` | Só com `enterprise: true`: Whisper (Hugging Face) como pyfunc, servido em CPU com scale to zero |
+| Tabela | `_lab_estado` | Ids dos recursos criados por esta instalação (ex.: Genie), para nunca usar um de outra pessoa |
 | Model service | `assistente_llm` | Roteador do Unity Gateway (50/50 + fallback); inference table `assistente_llm_payload` |
 | View | `vw_vendas_produto`, `vw_cestas_mais_fortes` | Apoio ao Genie |
 | Volume | `documentos`, `midia` | PDFs; fotos de produtos, fotos enviadas para a busca visual (`midia/imagens_busca/`), páginas e figuras extraídas das fichas |
@@ -190,6 +197,7 @@ Fora do schema: o App, o Genie *"BrickStore · Genie de Dados"* e o dashboard *"
 | **Meus pedidos** | Histórico do cliente | `pedidos` |
 | **💬 Assistente** | Chat com anexo de imagem. Mostra **qual agente atendeu**, as ferramentas usadas, **qual modelo o roteador escolheu** e os selos de **guardrail** | supervisor + 3 agentes + MCP Detetive + MCP do Genie + RAG, via roteador do Unity Gateway |
 | **🎛️ Estúdio** | Painel, **novo produto a partir de PDF**, edição, central de ajuda, página do MCP | `ai_parse_document`, Delta DML, sync do VS |
+| **📞 SAC por voz** (aba do Estúdio, só com `enterprise: true`) | **Gravar no microfone**, ligações prontas com *Transcrever agora*, envio de arquivo e histórico | **Whisper** (Model Serving) + `ai_classify`, `ai_analyze_sentiment`, `ai_extract` |
 
 ### Estúdio: cadastro a partir da ficha técnica (PDF)
 
@@ -553,7 +561,8 @@ brickstore/
 ├── config.yaml                  ← ⚙️ configuração (catálogo, schema, Apps, modelos, roteador, warehouse): edite aqui
 ├── _config.py                   ← lê o config.yaml e expõe as variáveis/widgets para todos os notebooks
 ├── 99_limpar_ambiente.py        ← remove tudo (protegido por confirmação)
-├── setup/                       ← as etapas 00 a 12, rodadas pelo INSTALAR via %run
+├── setup/                       ← as etapas rodadas pelo INSTALAR via %run (00 a 07, com 02b e 05a do SAC por voz)
+│   └── modelos/whisper_pyfunc.py ← 🎙️ Whisper como modelo MLflow pyfunc (só workspace corporativo)
 ├── app/                         ← Databricks Apps
 │   ├── main.py                  ← App da loja (FastAPI): /, /api/*, /mcp, /assistente/grafo, /sair
 │   ├── mcp_main.py              ← App próprio do MCP (mcp-detetive-produtos): /, /mcp
@@ -566,6 +575,7 @@ brickstore/
 │   │   ├── guardrail.py         ← mascaramento, regras de bloqueio e LLM-juiz
 │   │   ├── agenda.py            ← 📅 chegada do pedido no Google Calendar (MCP) ou link/.ics
 │   │   ├── lakebase.py          ← 🐘 pedidos e solicitações no Postgres (Lakebase)
+│   │   ├── voz.py               ← 📞 SAC por voz: Whisper + funções de IA (só workspace corporativo)
 │   │   ├── memoria.py           ← 🧠 memória do Assistente (loja.conversas no Lakebase)
 │   │   ├── previsao.py          ← 📈 ai_forecast sob demanda
 │   │   ├── estudio.py           ← Estúdio: ficha PDF → produto, CRUD, PDFs de ajuda
@@ -577,7 +587,7 @@ brickstore/
 ├── documentos/                  ← PDFs da central de ajuda
 ├── fichas/                      ← fichas técnicas de fornecedor (PDF com tabelas e fotos) para o Estúdio
 ├── dashboards/                  ← JSON do dashboard AI Gateway Usage Analytics
-├── ferramentas/                 ← scripts locais (opcionais): gerar_dados.py (regera dados/), PDFs, fichas (desenho.py) e a bateria de testes do App
+├── ferramentas/                 ← scripts locais (opcionais): gerar_dados.py (regera dados/), PDFs, fichas (desenho.py), áudios do SAC e a bateria de testes do App
 └── docs/                        ← arquitetura, MCP, roteiro de demonstração, especificação e imagens do README
 ```
 
