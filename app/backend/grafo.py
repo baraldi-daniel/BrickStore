@@ -84,6 +84,7 @@ class Estado(TypedDict, total=False):
     laudo: Any
     genie: Any
     agenda: Any
+    sacola: list[dict]                    # produtos que o agente colocou na sacola (o App adiciona de verdade)
     modelos: list[str]
     # saída
     resposta: str
@@ -197,8 +198,11 @@ def _msgs_iniciais(estado: Estado, esp: dict) -> list[dict]:
             from .catalogo import CATALOGO
             perfil = next((x for x in CATALOGO.perfis if x.get("cliente_id") == estado["cliente_id"]), {})
             nome = str(perfil.get("nome") or perfil.get("apelido") or "").split(" ")[0]
+            ja_conversando = any(m["role"] == "assistant" for m in msgs[1:-1])
             msgs[-1]["content"] += (f"\n\n[cliente logado: {estado['cliente_id']}" + (f" · primeiro nome: {nome}" if nome else "")
-                                    + " — chame o cliente pelo primeiro nome; nunca escreva o código do cliente na resposta]")
+                                    + (" — conversa em andamento: NÃO cumprimente de novo" if ja_conversando
+                                       else " — cumprimente pelo primeiro nome só nesta primeira resposta")
+                                    + "; nunca escreva o código do cliente na resposta]")
         if estado.get("imagem"):
             msgs[-1]["content"] += f"\n\n[imagem anexada: {estado['imagem']}]"
     return msgs
@@ -212,6 +216,11 @@ def _ferramentas_do(agente: str, config: RunnableConfig) -> list[dict]:
 
 RX_CHAMADA_TEXTO = re.compile(r"\[?\b([a-z_]{4,40})\(([^()]*)\)\]?")
 RX_PEDIDO_AGENDA = re.compile(r"agenda|calend[aá]rio|lembr|lembre|avis[ae] quando", re.I)
+# pergunta sobre a PRÓPRIA conversa: responde pelo histórico/memória, sem obrigar ferramenta
+RX_SOBRE_CONVERSA = re.compile(r"(o que|qual|quais|que)\b.{0,40}\b(te |lhe |eu )?(perguntei|pedi|falei|disse|mandei|enviei|escrevi|"
+                               r"procurei|buscamos|vimos)|[uú]ltim[ao]s? (mensage|pergunta|coisa)|"
+                               r"(lembra|recorda)\w*.{0,40}(perguntei|pedi|falamos|conversamos|conversa|disse|mandei)|"
+                               r"nossa conversa|conversamos|o que falamos", re.I)
 
 
 def _tool_call_em_texto(conteudo: str, nomes: set):
@@ -249,9 +258,10 @@ def _no_agente(agente: str):
         nomes = {t["function"]["name"] for t in tools}
         ultima = _ultima(estado)
         # 1ª rodada: obriga o uso de ferramenta (dados reais, nada inventado), exceto saudações curtas
-        forcar = rodada == 0 and bool(tools) and len(ultima.strip()) > 12
+        sobre_conversa = bool(RX_SOBRE_CONVERSA.search(ultima.split("\n\n[")[0]))
+        forcar = rodada == 0 and bool(tools) and len(ultima.strip()) > 12 and not sobre_conversa
         # pediu para pôr na agenda e a ferramenta ainda não rodou: obriga a chamada também nas rodadas seguintes
-        if ("agendar_entrega" in nomes and RX_PEDIDO_AGENDA.search(ultima.split("\n\n[")[0])
+        if ("agendar_entrega" in nomes and not sobre_conversa and RX_PEDIDO_AGENDA.search(ultima.split("\n\n[")[0])
                 and "agendar_entrega" not in (estado.get("usadas") or []) and rodada < 3):
             forcar = True
         resp, modelo = await asyncio.to_thread(S.chat_assistente, msgs, tools, 1400, 0.2, "required" if forcar else None)
@@ -318,8 +328,9 @@ def guardrail_ferramentas(estado: Estado) -> dict:
                 c["args"] = {**args, "cliente_id": logado}
             else:
                 c["args"] = {**args, "cliente_id": logado}
-        if c["nome"] == "investigar_imagem" and estado.get("imagem") and not str(args.get("imagem", "")).startswith(("/Volumes", "data:")):
-            c["args"]["imagem"] = estado["imagem"]
+        # foto anexada: o Detetive recebe SEMPRE o caminho real do upload (o modelo às vezes copia o caminho errado)
+        if c["nome"] in ("investigar_imagem", "analisar_imagem") and estado.get("imagem") and not c.get("negado"):
+            c["args"] = {**c["args"], "imagem": estado["imagem"]}
         pendentes.append(c)
     return {"pendentes": pendentes, "eventos": eventos, "trilha": ["guardrail_ferramentas"]}
 
@@ -337,6 +348,13 @@ async def _executar(cliente: Client, nome: str, args: dict, token_usuario: str |
             return await agenda.agendar_entrega(args.get("pedido_id", ""), args.get("cliente_id"), token_usuario)
         if nome == "suporte":
             return await asyncio.to_thread(_suporte, args.get("pergunta", ""))
+        if nome == "adicionar_a_sacola":   # o App coloca na sacola de verdade quando recebe o campo "sacola" da resposta
+            from .catalogo import CATALOGO
+            p = CATALOGO.achar(str(args.get("produto") or ""))
+            if not p:
+                return {"erro": "produto não encontrado no catálogo; peça o nome exato"}
+            return {"adicionado": True, "quantidade": max(1, min(int(args.get("quantidade") or 1), 10)),
+                    "produto": CATALOGO.resumo(p)}
         if nome == "consultar_dados":
             if not S.GENIE_SPACE_ID:
                 return {"erro": "Genie não configurado."}
@@ -365,6 +383,7 @@ async def ferramentas(estado: Estado, config: RunnableConfig) -> dict:
     cliente: Client = config["configurable"]["mcp"]
     msgs, produtos = list(estado["msgs"]), dict(estado.get("produtos") or {})
     laudo, genie, usadas, agenda_res = estado.get("laudo"), estado.get("genie"), [], estado.get("agenda")
+    sacola = list(estado.get("sacola") or [])
     for c in estado.get("pendentes") or []:
         resultado = ({"erro": c["negado"]} if c.get("negado")
                      else await _executar(cliente, c["nome"], c["args"], config["configurable"].get("token_usuario")))
@@ -377,10 +396,12 @@ async def ferramentas(estado: Estado, config: RunnableConfig) -> dict:
             genie = resultado
         if c["nome"] == "agendar_entrega" and not c.get("negado") and not resultado.get("erro"):
             agenda_res = resultado
+        if c["nome"] == "adicionar_a_sacola" and resultado.get("adicionado"):
+            sacola.append({**resultado["produto"], "quantidade": resultado["quantidade"]})
         msgs.append({"role": "tool", "tool_call_id": c["id"],
                      "content": json.dumps(resultado, ensure_ascii=False, default=str)[:12000]})
     return {"msgs": msgs, "pendentes": [], "produtos": produtos, "laudo": laudo, "genie": genie, "usadas": usadas, "agenda": agenda_res,
-            "trilha": ["ferramentas"]}
+            "sacola": sacola, "trilha": ["ferramentas"]}
 
 
 # ───────────────────────────── 🛡️ guardrail de saída ─────────────────────────────
@@ -593,4 +614,4 @@ async def executar(mensagens: list[dict], imagem: str | None, cliente_id: str | 
             "genie": final.get("genie"), "modelos": final.get("modelos") or [], "bloqueado": bool(final.get("bloqueado")),
             "agente": {"id": agente, **G.AGENTES[agente]}, "guardrail": final.get("eventos") or [],
             "trilha": final.get("trilha") or [], "passos": final.get("passos") or [],
-            "agenda": final.get("agenda"), "memoria": final.get("memoria_info") or {}}
+            "agenda": final.get("agenda"), "memoria": final.get("memoria_info") or {}, "sacola": final.get("sacola") or []}

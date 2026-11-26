@@ -152,10 +152,15 @@ def _buscar_item(laudo: dict, item: dict, n: int) -> list[dict]:
              "pistas": _pistas(laudo, item, p)} for sc, p in ranq[:n]]
 
 
-def investigar(dados: bytes, quantidade: int = 6) -> dict:
-    """Busca visual: laudo do produto da foto + produtos parecidos do catálogo."""
+def investigar(dados: bytes, quantidade: int = 6, progresso=lambda passo: None) -> dict:
+    """Busca visual: laudo do produto da foto + produtos parecidos do catálogo.
+    `progresso(n)`: 1 modelo de visão, 2 Vector Search + ranking, 3 fim (o 0, envio da foto, é marcado por quem chama)."""
+    progresso(1)
     laudo = laudo_da_imagem(dados)
-    return {"laudo": laudo, "produtos": _buscar_item(laudo, laudo, quantidade)}
+    progresso(2)
+    produtos = _buscar_item(laudo, laudo, quantidade)
+    progresso(3)
+    return {"laudo": laudo, "produtos": produtos}
 
 
 # ───────────────────────────── ferramentas MCP ─────────────────────────────

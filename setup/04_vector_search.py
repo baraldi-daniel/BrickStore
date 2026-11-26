@@ -59,16 +59,48 @@ except Exception as e:
 IDX_PRODUTOS = fq("produtos_index")
 IDX_AJUDA = fq("ajuda_index")
 if VS_OK:   # sem Vector Search: célula pulada
+    SPECS = {IDX_PRODUTOS: (fq("produtos"), "produto_id", "texto_busca"),
+             IDX_AJUDA: (fq("central_ajuda_chunks"), "chunk_id", "conteudo")}
+
+    def _criar(index_name):
+        fonte, pk, coluna = SPECS[index_name]
+        for tentativa in range(12):   # logo depois de apagar, o nome pode levar alguns segundos para ficar livre
+            try:
+                vsc.create_delta_sync_index(
+                    endpoint_name=VS_ENDPOINT, index_name=index_name, source_table_name=fonte,
+                    pipeline_type="TRIGGERED", primary_key=pk,
+                    embedding_source_column=coluna, embedding_model_endpoint_name=EMBEDDING)
+                print(f"＋ criando {index_name} sobre {fonte}.{coluna}")
+                return
+            except Exception as e:
+                if tentativa == 11:
+                    raise
+                time.sleep(15)
+
+    def recriar(index_name, motivo):
+        """A etapa 01/02 reescreve a tabela de origem a cada instalação; a sincronização incremental pode quebrar
+        (ONLINE_PIPELINE_FAILED). Recriar o índice faz a indexação completa de novo (poucos minutos)."""
+        print(f"♻️ {index_name}: {motivo} → recriando o índice")
+        try:
+            vsc.delete_index(VS_ENDPOINT, index_name)
+        except Exception as e:
+            print("   (apagar):", str(e)[:100])
+        time.sleep(20)
+        _criar(index_name)
+
     def criar_ou_sincronizar(index_name, fonte, pk, coluna):
         nomes = [i["name"] for i in vsc.list_indexes(VS_ENDPOINT).get("vector_indexes", [])]
         if index_name in nomes:
             idx = vsc.get_index(VS_ENDPOINT, index_name)
             info = idx.describe()
             modelo = (info.get("delta_sync_index_spec", {}).get("embedding_source_columns") or [{}])[0].get("embedding_model_endpoint_name")
+            estado = str((info.get("status") or {}).get("detailed_state", ""))
             if modelo and modelo != EMBEDDING:
-                print(f"↻ {index_name} usa {modelo}; recriando com {EMBEDDING}")
-                vsc.delete_index(VS_ENDPOINT, index_name)
-                time.sleep(20)
+                recriar(index_name, f"usa {modelo}; o configurado é {EMBEDDING}")
+                return
+            if "FAILED" in estado:
+                recriar(index_name, f"sincronização anterior falhou ({estado})")
+                return
             else:
                 print(f"↻ {index_name} já existe — sincronizando")
                 try:
@@ -76,11 +108,7 @@ if VS_OK:   # sem Vector Search: célula pulada
                 except Exception as e:
                     print("  (sync já em andamento)", str(e)[:100])
                 return
-        print(f"＋ criando {index_name} sobre {fonte}.{coluna}")
-        vsc.create_delta_sync_index(
-            endpoint_name=VS_ENDPOINT, index_name=index_name, source_table_name=fonte,
-            pipeline_type="TRIGGERED", primary_key=pk,
-            embedding_source_column=coluna, embedding_model_endpoint_name=EMBEDDING)
+        _criar(index_name)
 
 
     criar_ou_sincronizar(IDX_PRODUTOS, fq("produtos"), "produto_id", "texto_busca")
@@ -96,14 +124,21 @@ if VS_OK:   # sem Vector Search: célula pulada
 
 if VS_OK:   # sem Vector Search: célula pulada
     esperado = {IDX_PRODUTOS: spark.table(fq("produtos")).count(), IDX_AJUDA: spark.table(fq("central_ajuda_chunks")).count()}
-    pendentes = set(esperado)
+    pendentes, recriados = set(esperado), set()
     inicio = time.time()
-    while pendentes and time.time() - inicio < 40 * 60:
+    while pendentes and time.time() - inicio < 25 * 60:
         for nome in list(pendentes):
             st = vsc.get_index(VS_ENDPOINT, nome).describe().get("status", {})
             n = st.get("indexed_row_count") or 0
+            estado = str(st.get("detailed_state", ""))
             if st.get("ready") and n >= esperado[nome]:
                 print(f"✅ {nome} pronto ({n} linhas)")
+                pendentes.discard(nome)
+            elif "FAILED" in estado and nome not in recriados:   # falhou: recria UMA vez (indexação completa)
+                recriar(nome, f"sincronização falhou ({estado})")
+                recriados.add(nome)
+            elif "FAILED" in estado:   # falhou de novo: não fica esperando à toa
+                print(f"⚠️ {nome} continua falhando ({st.get('message', '')[:120]}); seguindo (o índice antigo segue online)")
                 pendentes.discard(nome)
             else:
                 print(f"… {nome}: {n}/{esperado[nome]} · {st.get('detailed_state', '')} {st.get('message', '')[:70]}")

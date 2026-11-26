@@ -63,6 +63,18 @@ async function api(caminho, opts = {}) {
   return r.json();
 }
 const apiForm = (caminho, fd) => api(caminho, { method: "POST", body: fd });
+// Progresso REAL de tarefas longas: o backend registra a etapa em que está; a tela consulta enquanto espera
+function acompanhar(aoPasso) {
+  const tarefa = "t" + Math.random().toString(36).slice(2, 12);
+  let ativo = true, ultimo = -1;
+  (async () => {
+    while (ativo) {
+      try { const r = await api("/api/progresso/" + tarefa); if (ativo && r.passo !== ultimo && r.passo >= 0) { ultimo = r.passo; aoPasso(r.passo); } } catch { }
+      await new Promise(ok => setTimeout(ok, 700));
+    }
+  })();
+  return { tarefa, parar: () => { ativo = false; } };
+}
 const primeiroNome = a => String(a || "").split(/[\s·]+/)[0];
 const iniciais = nome => String(nome || "?").replace(/[^A-Za-zÀ-ÿ ]/g, " ").split(" ").filter(Boolean).slice(0, 2).map(s => s[0]).join("").toUpperCase() || "?";
 const nomeEstiloOuId = id => nomeEstilo(id);
@@ -614,8 +626,9 @@ async function paginaPedidos(_a, _q, tok) {
 }
 
 /* ───────────── Detetive de produtos ───────────── */
-const FASES_DET = ["Recortando o produto da foto…", "Lendo cor, material e acabamento…", "Identificando o tipo e o estilo…",
-  "Buscando parecidos no catálogo (Vector Search)…", "Ranqueando por compatibilidade…"];
+// etapas reais do backend (main.py /api/detetive → mcp_detetive.investigar)
+const FASES_DET = ["Enviando a foto para o Volume…", "Lendo o produto com o modelo de visão (cor, material, tipo, estilo)…",
+  "Buscando parecidos no catálogo (Vector Search) e ranqueando…"];
 const compatHTML = p => {
   if (p.compatibilidade == null) return "";
   const v = Math.round(fracao(p.compatibilidade) * 100);
@@ -679,16 +692,14 @@ async function investigar(arquivo) {
   const url = URL.createObjectURL(arquivo);
   res.innerHTML = `<div class="scan"><div class="scan-img"><img src="${url}" alt=""><div class="scan-linha"></div></div>
     <div class="scan-fase" id="det-fase">${FASES_DET[0]}</div><div class="scan-barra"><i></i></div></div>`;
-  let i = 0;
-  const timer = setInterval(() => { const f = $("#det-fase"); if (f) f.textContent = FASES_DET[++i % FASES_DET.length]; }, 1700);
+  const acomp = acompanhar(p => { const f = $("#det-fase"); if (f && FASES_DET[p]) f.textContent = FASES_DET[p]; });
   try {
-    const fd = new FormData(); fd.append("imagem", arquivo); fd.append("quantidade", "8");
-    // a varredura tem duração mínima para a animação ser visível mesmo com resposta rápida
-    const [r] = await Promise.all([apiForm("/api/detetive", fd), new Promise(res => setTimeout(res, 1800))]);
-    clearInterval(timer);
+    const fd = new FormData(); fd.append("imagem", arquivo); fd.append("quantidade", "8"); fd.append("tarefa", acomp.tarefa);
+    const r = await apiForm("/api/detetive", fd);
+    acomp.parar();
     res.innerHTML = laudoHTML(r, url);
     ligarTrilhos(res);
-  } catch (e) { clearInterval(timer); res.innerHTML = `<div class="painel painel-erro"><b>A busca visual falhou</b><span>${escHTML(e.message)}</span></div>`; }
+  } catch (e) { acomp.parar(); res.innerHTML = `<div class="painel painel-erro"><b>A busca visual falhou</b><span>${escHTML(e.message)}</span></div>`; }
 }
 
 /* ───────────── Estúdio (controle da loja) ───────────── */
@@ -825,9 +836,10 @@ async function abaPrevisao(tok) {
     </form>
     <div id="fc-res"></div></section>`);
   const f = $("#fc-form");
-  const listas = { departamento: (op.departamentos || []).map(d => [d, d]),
-    tipo: (op.tipos || []).map(t => typeof t === "string" ? [t, t] : [t.tipo, `${t.tipo} · ${t.departamento}`]),
-    produto: (op.produtos || []).map(p => [p.produto_id, p.nome]) };
+  const alfa = lista => lista.sort((a, b) => a[1].localeCompare(b[1], "pt-BR"));   // menus em ordem alfabética
+  const listas = { departamento: alfa((op.departamentos || []).map(d => [d, d])),
+    tipo: alfa((op.tipos || []).map(t => typeof t === "string" ? [t, t] : [t.tipo, `${t.tipo} · ${t.departamento}`])),
+    produto: alfa((op.produtos || []).map(p => [p.produto_id, p.nome])) };
   f.filtro_tipo.onchange = () => {
     const k = f.filtro_tipo.value, l = listas[k];
     $("#fc-valor-l").classList.toggle("oculto", !l);
@@ -864,7 +876,8 @@ function previsaoHTML(r, par) {
   const nx = Math.min(8, datas.length), passo = Math.max(1, Math.floor(datas.length / nx));
   const somaPrev = prev.reduce((a, x) => a + (+x.valor || 0), 0), somaUlt = real.slice(-prev.length).reduce((a, x) => a + (+x.valor || 0), 0);
   const varPct = somaUlt ? ((somaPrev / somaUlt - 1) * 100) : 0;
-  return `<div class="fc-kpis"><div><span>Previsto nos próximos ${prev.length} períodos</span><b>${fmt(somaPrev)}</b></div>
+  const aviso = r.aviso ? `<div class="painel fc-aviso">⚠️ ${escHTML(r.aviso)}</div>` : "";
+  return `${aviso}<div class="fc-kpis"><div><span>Previsto nos próximos ${prev.length} períodos</span><b>${fmt(somaPrev)}</b></div>
       <div><span>Mesmo nº de períodos anteriores</span><b>${fmt(somaUlt)}</b></div>
       <div><span>Variação</span><b class="${varPct >= 0 ? "pos" : "neg"}">${varPct >= 0 ? "+" : ""}${varPct.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</b></div>
       <div><span>Tempo (série + ai_forecast)</span><b>${(ms / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} s</b></div></div>
@@ -998,15 +1011,16 @@ const PASSOS_FICHA = ["Enviando o PDF para o Volume…", "ai_parse_document: len
 async function processarFicha({ arquivo, exemplo }) {
   const res = $("#ficha-res");
   res.innerHTML = `<div class="painel"><ol class="passos" id="passos">${PASSOS_FICHA.map((p, i) => `<li data-p="${i}"><span class="pontinho"></span>${p}</li>`).join("")}</ol></div>`;
-  let i = 0;
-  const marcar = () => $$("#passos li").forEach(li => { const k = +li.dataset.p; li.querySelector(".pontinho").className = "pontinho " + (k < i ? "ok" : k === i ? "alerta" : ""); });
-  marcar();
-  const timer = setInterval(() => { if (i < PASSOS_FICHA.length - 1) { i++; marcar(); } }, 4200);
+  // cada bolinha acende quando o backend REALMENTE começa a etapa (main.py /api/estudio/fichas → estudio.processar_ficha)
+  const marcar = i => $$("#passos li").forEach(li => { const k = +li.dataset.p; li.querySelector(".pontinho").className = "pontinho " + (k < i ? "ok" : k === i ? "alerta" : ""); });
+  marcar(0);
+  const acomp = acompanhar(marcar);
   try {
     const fd = new FormData(); if (arquivo) fd.append("arquivo", arquivo); if (exemplo) fd.append("exemplo", exemplo);
+    fd.append("tarefa", acomp.tarefa);
     const r = await apiForm("/api/estudio/fichas", fd);
-    clearInterval(timer); renderRascunho(r);
-  } catch (e) { clearInterval(timer); res.innerHTML = `<div class="painel painel-erro"><b>Não foi possível processar a ficha</b><span>${escHTML(e.message)}</span></div>`; }
+    acomp.parar(); renderRascunho(r);
+  } catch (e) { acomp.parar(); res.innerHTML = `<div class="painel painel-erro"><b>Não foi possível processar a ficha</b><span>${escHTML(e.message)}</span></div>`; }
 }
 const sanitizarTabela = h => String(h).replace(/<(?!\/?(table|tr|th|td|thead|tbody|tfoot)\b)[^>]*>/gi, "");
 function renderRascunho(r) {
@@ -1152,7 +1166,7 @@ async function abaMcp(tok) {
 
 /* ───────────── assistente (chat) ───────────── */
 const SUGESTOES_CHAT = ["Monte um setup gamer com até R$ 3 mil", "Quais produtos combinam com um quarto boho?", "Quem comprou um sofá também levou o quê?", "Qual é a política de troca?"];
-const NOMES_FERRAMENTAS = { buscar_produtos: "Busca semântica", quem_comprou_tambem_comprou: "Quem comprou também comprou", compre_junto: "Compre junto",
+const NOMES_FERRAMENTAS = { adicionar_a_sacola: "🛍️ Sacola", buscar_produtos: "Busca semântica", quem_comprou_tambem_comprou: "Quem comprou também comprou", compre_junto: "Compre junto",
   ficha_produto: "Ficha do produto", investigar_imagem: "Detetive de produtos", analisar_imagem: "Análise de imagem", consultar_dados: "Genie · dados", suporte: "Central de ajuda",
   pedidos_do_cliente: "Meus pedidos", agendar_entrega: "Google Calendar (MCP)", abrir_solicitacao: "Abrir solicitação (SAC)", recomendar_para_cliente: "Recomendação ML" };
 const NOS_GRAFO = {
@@ -1276,6 +1290,8 @@ $("#chat-form").onsubmit = async e => {
     pensando.remove();
     addMsg("bot", r.resposta || "", r);
     E.chat.push({ role: "assistant", content: r.resposta || "" });
+    // o agente colocou produtos na sacola (ferramenta adicionar_a_sacola): adiciona de verdade e avisa
+    (r.sacola || []).forEach((p, k) => addCarrinho(p, { qtd: p.quantidade || 1, aviso: k === (r.sacola.length - 1) }));
     if (r.memoria && r.memoria.gravado) E.memoriaTotal = (E.memoriaTotal || 0) + 2;
   } catch (err) { pensando.remove(); addMsg("bot", "Não consegui responder agora: " + err.message); }
 };

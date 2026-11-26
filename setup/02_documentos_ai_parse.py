@@ -110,8 +110,23 @@ for r in linhas:
 
 import pandas as pd
 df_chunks = pd.DataFrame(chunks)
-(spark.createDataFrame(df_chunks).write.mode("overwrite").option("overwriteSchema", "true")
-      .option("delta.enableChangeDataFeed", "true").saveAsTable(fq("central_ajuda_chunks")))
+novos = spark.createDataFrame(df_chunks)
+mesclado = False
+if spark.catalog.tableExists(fq("central_ajuda_chunks")):
+    # reinstalação: MERGE em vez de overwrite. Reescrever a tabela quebra a sincronização incremental do
+    # ajuda_index (Vector Search fica em ONLINE_PIPELINE_FAILED); com MERGE só as mudanças vão para o índice
+    novos.createOrReplaceTempView("chunks_novos")
+    try:
+        spark.sql(f"""MERGE INTO {fq('central_ajuda_chunks')} t USING chunks_novos s ON t.chunk_id = s.chunk_id
+                      WHEN MATCHED THEN UPDATE SET *
+                      WHEN NOT MATCHED THEN INSERT *
+                      WHEN NOT MATCHED BY SOURCE THEN DELETE""")
+        mesclado = True
+    except Exception as e:   # colunas mudaram: reescreve (a etapa 04 recria o índice se a sincronização quebrar)
+        print("   • MERGE não deu (", str(e)[:100], "); reescrevendo a tabela")
+if not mesclado:
+    (novos.write.mode("overwrite").option("overwriteSchema", "true").option("delta.enableChangeDataFeed", "true")
+          .saveAsTable(fq("central_ajuda_chunks")))
 spark.sql(f"ALTER TABLE {fq('central_ajuda_chunks')} ALTER COLUMN chunk_id SET NOT NULL")
 try:
     spark.sql(f"ALTER TABLE {fq('central_ajuda_chunks')} ADD CONSTRAINT pk_ajuda PRIMARY KEY (chunk_id)")
@@ -140,6 +155,14 @@ for f in fichas:
     shutil.copyfile(f"{REPO_FS}/fichas/{f}", f"{VOL_FICHAS}/{f}")
     print("   •", f)
 print(f"✅ {len(fichas)} fichas copiadas para {VOL_FICHAS}")
+
+# Foto de exemplo para a busca visual no Playground (MCP Detetive): /Volumes/<catalog>/<schema>/midia/exemplos/
+VOL_EXEMPLOS = f"/Volumes/{CATALOG}/{SCHEMA}/midia/exemplos"
+os.makedirs(VOL_EXEMPLOS, exist_ok=True)
+for f in sorted(os.listdir(f"{REPO_FS}/imagens_exemplo")):
+    if f.lower().endswith((".jpg", ".jpeg", ".png")):
+        shutil.copyfile(f"{REPO_FS}/imagens_exemplo/{f}", f"{VOL_EXEMPLOS}/{f}")
+        print(f"✅ foto de exemplo: {VOL_EXEMPLOS}/{f}")
 
 spark.sql(f"""CREATE TABLE IF NOT EXISTS {fq('fichas_parseadas')} (
   chave STRING, arquivo STRING, path STRING, parsed VARIANT, produto_id STRING, processado_em TIMESTAMP)

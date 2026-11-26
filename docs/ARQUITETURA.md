@@ -73,7 +73,8 @@
   - `prever(filtro_tipo, valor, metrica, granularidade, historico_dias, horizonte)` roda o `ai_forecast` **na hora**, com filtro
     total, departamento, tipo ou produto; receita ou quantidade; dia ou semana (`frequency => 'day' | 'week'`; semanas incompletas
     são descartadas). Colunas e métricas ficam numa whitelist, e o valor do filtro vai como parâmetro nomeado;
-  - `opcoes()` devolve departamentos, tipos e os 50 produtos com maior receita para os seletores.
+  - `opcoes()` devolve departamentos, tipos e produtos para os seletores, em ordem alfabética: os 300 de maior receita
+    + tudo o que foi comprado no App (o cache é zerado a cada compra).
 
 ### 3d. Lakebase (OLTP) + Lakehouse ao vivo
 - `setup/05c_lakebase`: projeto Lakebase **novo a cada instalação** (`<app_name>`, ou `<app_name>-2`… se o nome estiver preso; Postgres 17, 1 CU, scale to zero), schema `loja` com `pedidos`,

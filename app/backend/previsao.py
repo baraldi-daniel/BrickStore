@@ -55,18 +55,28 @@ METRICAS = {"receita": "sum(i.quantidade * i.preco_unitario)", "quantidade": "su
 GRANULARIDADES = {"dia": ("CAST(p.data_pedido AS DATE)", "day"), "semana": ("CAST(date_trunc('WEEK', p.data_pedido) AS DATE)", "week")}
 
 
-def _sql_serie(filtro_tipo: str, metrica: str, granularidade: str, historico_dias: int) -> str:
-    col_data, _ = GRANULARIDADES[granularidade]
+def _sql_serie(filtro_tipo: str, metrica: str, granularidade: str, historico_dias: int, incluir_hoje: bool = False) -> str:
+    """Série com CALENDÁRIO COMPLETO: dia (ou semana) sem venda entra como 0. Sem isso, um produto que vende pouco
+    (ex.: 30 dias com venda em 180) pareceria vender todo dia e a previsão sairia várias vezes acima do real.
+
+    - dia: de hoje-historico_dias até ontem (o dia de hoje está incompleto); `incluir_hoje=True` acrescenta hoje, só
+      para MOSTRAR no gráfico a compra que acabou de ser feita (o modelo nunca treina com o dia incompleto);
+    - semana: só semanas INTEIRAS do calendário (7 dias dentro da janela; a semana corrente fica de fora).
+    """
     coluna = FILTROS[filtro_tipo]
     where = f" AND {coluna} = :valor" if coluna else ""
-    corte = "date_trunc('WEEK', current_date())" if granularidade == "semana" else "current_date()"
-    base = (f"SELECT {col_data} AS data, CAST({METRICAS[metrica]} AS DOUBLE) AS valor, "
-            f"count(DISTINCT CAST(p.data_pedido AS DATE)) AS dias "
-            f"FROM {_T('pedidos')} p JOIN {_T('itens_pedido')} i USING (pedido_id) JOIN {S.fq('produtos')} pr USING (produto_id) "
-            f"WHERE p.status <> 'Cancelado' AND p.data_pedido >= date_sub(current_date(), {int(historico_dias)}) "
-            f"AND p.data_pedido < {corte}{where} GROUP BY 1")
-    # semana: só semanas completas (a primeira e a última da janela costumam vir pela metade)
-    return f"SELECT data, valor FROM ({base}) WHERE {'dias >= 7' if granularidade == 'semana' else 'true'}"
+    h = int(historico_dias)
+    fim = "current_date()" if (incluir_hoje and granularidade == "dia") else "date_sub(current_date(), 1)"
+    vendas = (f"SELECT CAST(p.data_pedido AS DATE) AS dia, CAST({METRICAS[metrica]} AS DOUBLE) AS valor "
+              f"FROM {_T('pedidos')} p JOIN {_T('itens_pedido')} i USING (pedido_id) JOIN {S.fq('produtos')} pr USING (produto_id) "
+              f"WHERE p.status <> 'Cancelado' AND p.data_pedido >= date_sub(current_date(), {h}) "
+              f"AND CAST(p.data_pedido AS DATE) <= {fim}{where} GROUP BY 1")
+    calendario = f"SELECT explode(sequence(date_sub(current_date(), {h}), {fim}, INTERVAL 1 DAY)) AS dia"
+    if granularidade == "semana":
+        return (f"SELECT CAST(date_trunc('WEEK', c.dia) AS DATE) AS data, sum(coalesce(v.valor, 0)) AS valor "
+                f"FROM ({calendario}) c LEFT JOIN ({vendas}) v USING (dia) "
+                f"GROUP BY 1 HAVING count(*) = 7")
+    return f"SELECT c.dia AS data, coalesce(v.valor, 0) AS valor FROM ({calendario}) c LEFT JOIN ({vendas}) v USING (dia)"
 
 
 def prever(filtro_tipo: str = "total", valor: str | None = None, metrica: str = "receita", granularidade: str = "dia",
@@ -92,24 +102,32 @@ def prever(filtro_tipo: str = "total", valor: str | None = None, metrica: str = 
     fim = hoje + timedelta(days=horizonte)
     if granularidade == "semana":
         fim = hoje - timedelta(days=hoje.weekday()) + timedelta(weeks=max(1, round(horizonte / 7)))
-    serie_sql = _sql_serie(filtro_tipo, metrica, granularidade, historico_dias)
+    serie_sql = _sql_serie(filtro_tipo, metrica, granularidade, historico_dias)                        # treina o modelo
+    serie_tela = _sql_serie(filtro_tipo, metrica, granularidade, historico_dias, incluir_hoje=True)    # mostra (inclui hoje)
     params = {"valor": valor} if FILTROS[filtro_tipo] else None
     sql_forecast = (f"SELECT CAST(data AS STRING) AS data, valor_forecast AS valor, valor_lower AS inferior, valor_upper AS superior "
                     f"FROM ai_forecast(observed => TABLE({serie_sql}), horizon => '{fim.isoformat()}', time_col => 'data', "
                     f"value_col => 'valor', prediction_interval_width => 0.8, frequency => '{freq}', seed => 7, "
                     f"parameters => '{{\"global_floor\": 0}}') ORDER BY data")
     t0 = time.perf_counter()
-    real = S.sql(f"SELECT CAST(data AS STRING) AS data, round(valor, 2) AS valor FROM ({serie_sql}) ORDER BY data", params)
+    real = S.sql(f"SELECT CAST(data AS STRING) AS data, round(valor, 2) AS valor FROM ({serie_tela}) ORDER BY data", params)
     t1 = time.perf_counter()
-    if len(real) < 8:
-        return {"serie_real": real, "previsao": [], "erro": "histórico curto demais para prever (menos de 8 pontos)",
+    com_venda = sum(1 for l in real if float(l["valor"] or 0) > 0)
+    erro = ("histórico curto demais para prever (menos de 8 períodos)" if len(real) < 8 else
+            "sem vendas no período escolhido" if com_venda == 0 else
+            "poucas vendas no período (menos de 3 períodos com venda) para uma previsão útil" if com_venda < 3 else None)
+    if erro:
+        return {"serie_real": real, "previsao": [], "erro": erro,
                 "parametros": locals_params(filtro_tipo, valor, metrica, granularidade, historico_dias, horizonte, fim), "sql": sql_forecast}
     prev = S.sql(sql_forecast, params, timeout_s=300)
     t2 = time.perf_counter()
     ultimo_real = real[-1]["data"]
     previsao = [{"data": l["data"], "valor": round(float(l["valor"] or 0), 2), "inferior": round(float(l["inferior"] or 0), 2),
                  "superior": round(float(l["superior"] or 0), 2)} for l in prev if l["data"] > ultimo_real]
-    return {"serie_real": real, "previsao": previsao,
+    # venda esparsa (ex.: produto com venda em poucos dias): a previsão vira uma média baixa com intervalo largo
+    aviso = (f"venda esparsa: só {com_venda} de {len(real)} períodos tiveram venda; a previsão é uma média com incerteza alta"
+             if com_venda < 0.3 * len(real) else None)
+    return {"serie_real": real, "previsao": previsao, "aviso": aviso,
             "parametros": locals_params(filtro_tipo, valor, metrica, granularidade, historico_dias, horizonte, fim),
             "sql": sql_forecast, "ms": {"serie": round((t1 - t0) * 1000), "ai_forecast": round((t2 - t1) * 1000)}}
 
@@ -120,13 +138,21 @@ def locals_params(filtro_tipo, valor, metrica, granularidade, historico_dias, ho
 
 
 def opcoes() -> dict:
-    """Valores para os seletores do App: departamentos, tipos e top 50 produtos por receita (últimos 180 dias)."""
+    """Valores para os seletores do App: departamentos, tipos e produtos (em ordem alfabética): os 300 de maior receita
+    nos últimos 180 dias + todo produto comprado agora no App (com ou sem Lakebase). Os pedidos do App têm id
+    P + data/hora (ex.: P261126164110); os do histórico, P + 7 dígitos (ex.: P0011655)."""
+    no_app = "p.pedido_id RLIKE '^P[0-9]{12}$'"
     deps = S.sql(f"SELECT DISTINCT departamento FROM {S.fq('produtos')} ORDER BY departamento")
     tipos = S.sql(f"SELECT departamento, tipo, count(*) AS n FROM {S.fq('produtos')} GROUP BY ALL ORDER BY departamento, tipo")
-    top = S.sql(f"""SELECT pr.produto_id, pr.nome, pr.departamento, round(sum(i.quantidade * i.preco_unitario), 2) AS receita
-                    FROM {_T('pedidos')} p JOIN {_T('itens_pedido')} i USING (pedido_id) JOIN {S.fq('produtos')} pr USING (produto_id)
-                    WHERE p.status <> 'Cancelado' AND p.data_pedido >= date_sub(current_date(), 180)
-                    GROUP BY ALL ORDER BY receita DESC LIMIT 50""")
+    top = S.sql(f"""WITH vendas AS (
+                      SELECT pr.produto_id, pr.nome, pr.departamento, round(sum(i.quantidade * i.preco_unitario), 2) AS receita,
+                             max(CASE WHEN {no_app} THEN 1 ELSE 0 END) AS comprado_no_app
+                      FROM {_T('pedidos')} p JOIN {_T('itens_pedido')} i USING (pedido_id) JOIN {S.fq('produtos')} pr USING (produto_id)
+                      WHERE p.status <> 'Cancelado' AND p.data_pedido >= date_sub(current_date(), 180)
+                      GROUP BY ALL)
+                    SELECT produto_id, nome, departamento, receita FROM vendas
+                    QUALIFY row_number() OVER (ORDER BY receita DESC) <= 300 OR comprado_no_app = 1
+                    ORDER BY nome""")
     return {"filtros": list(FILTROS), "metricas": list(METRICAS), "granularidades": list(GRANULARIDADES),
             "departamentos": [d["departamento"] for d in deps],
             "tipos": [{"tipo": t["tipo"], "departamento": t["departamento"]} for t in tipos],

@@ -52,7 +52,7 @@ o protocolo MCP de verdade, sem rede.
 ### 2. AI Playground
 **Playground** → modelo com tools (ex.: GPT OSS 120B ou Llama 4 Maverick) → **Tools → + Add tool → MCP servers →
 Databricks Apps → `mcp-detetive-produtos`**. Prompts de exemplo: *"tem na BrickStore algo parecido com o produto da
-foto /Volumes/brickstore/varejo/midia/imagens_busca/<sua_foto>.jpg?"* e *"Busque uma luminária de piso até R$ 400 e diga
+foto /Volumes/brickstore/varejo/midia/exemplos/tenis_corrida_azul.jpg?"* (foto de exemplo copiada pela etapa 02) e *"Busque uma luminária de piso até R$ 400 e diga
 o que costuma ser comprado junto."* Combine com os MCPs gerenciados do
 Unity Gateway, por exemplo `system.ai.google_calendar` (*"ache uma luminária para minha sala escandinava e
 agende a entrega para sábado"*) ou `system.ai.gmail` (*"rascunhe um e-mail com o kit compre junto do sofá"*).

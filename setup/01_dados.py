@@ -74,6 +74,9 @@ def trocar_marca(pdf):
     return pdf
 
 
+FONTES_VS = {"produtos": "produto_id"}   # tabelas que alimentam índices do Vector Search (etapa 04) → chave do MERGE
+
+
 def gravar(pdf, tabela, comentario, duplos=(), inteiros=(), nulos_texto=(), cdf=False):
     """pandas → Delta. NaN vira NULL (nanvl) antes dos casts, porque o serverless roda em ANSI mode.
     Colunas só com nulos (ex.: imagem_path) não têm tipo inferível: entram como STRING nula."""
@@ -84,6 +87,18 @@ def gravar(pdf, tabela, comentario, duplos=(), inteiros=(), nulos_texto=(), cdf=
         sdf = sdf.withColumn(c, F.nanvl(F.col(c).cast("double"), F.lit(None).cast("double")))
     for c in inteiros:
         sdf = sdf.withColumn(c, F.nanvl(F.col(c).cast("double"), F.lit(None).cast("double")).cast("int"))
+    if tabela in FONTES_VS and spark.catalog.tableExists(fq(tabela)):
+        # reinstalação de uma tabela que alimenta o Vector Search: MERGE em vez de overwrite. Reescrever a tabela
+        # quebra a sincronização incremental do índice (ONLINE_PIPELINE_FAILED); com MERGE só as mudanças vão para ele
+        chave = FONTES_VS[tabela]
+        sdf.createOrReplaceTempView(f"novos_{tabela}")
+        try:
+            spark.sql(f"""MERGE INTO {fq(tabela)} t USING novos_{tabela} s ON t.{chave} = s.{chave}
+                          WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT * WHEN NOT MATCHED BY SOURCE THEN DELETE""")
+            spark.sql(f"COMMENT ON TABLE {fq(tabela)} IS '{comentario.replace(MARCA_DADOS, MARCA)}'")
+            return sdf
+        except Exception as e:   # colunas mudaram: reescreve (a etapa 04 recria o índice se a sincronização quebrar)
+            print(f"   • MERGE em {tabela} não deu ({str(e)[:100]}); reescrevendo a tabela")
     escrita = sdf.write.mode("overwrite").option("overwriteSchema", "true")
     if cdf:
         escrita = escrita.option("delta.enableChangeDataFeed", "true")

@@ -70,7 +70,7 @@ Você roda **um único notebook** (`INSTALAR`) e ganha um e-commerce completo co
 | 1 | **Trazer o repositório para o workspace** | No Databricks: **Workspace → Create → Git folder** → cole a URL deste repositório. |
 | 2 | **Rodar o `INSTALAR`** | Abra o notebook `INSTALAR` → **Run all**. Leva de 20 a 30 minutos; a indexação do Vector Search é a parte mais lenta. |
 | 3 | **Explorar** | No fim aparece o link do App. Escolha um cliente em *"Quem está comprando?"* e navegue. |
-| ➕ | **Etapas manuais** (no final) | Google Calendar, Playground, Genie One + Gmail e os extras do workspace corporativo: veja [🖐 Etapas manuais](#-etapas-manuais-no-final). Nenhuma delas impede o App de subir. |
+| ➕ | **Etapas manuais** (no final) | Google Calendar, Gmail, Playground, o **roteiro de testes** e os extras do workspace corporativo: veja [🖐 Etapas manuais](#-etapas-manuais-e-roteiro-de-testes-no-final). Nenhuma delas impede o App de subir. |
 
 > **Nada opcional impede o App de subir.** Se uma parte não estiver disponível no workspace (Lakebase, Whisper,
 > recomendador servido, `ai_forecast`, roteador do Unity Gateway, Genie, Vector Search), a etapa avisa e a instalação
@@ -115,7 +115,7 @@ instalação **segue**: o App grava pedidos no Delta e a memória do chat fica d
 
 **Extras só do workspace corporativo:** o **SAC por voz com Whisper** (aba 📞 no Estúdio) entra no próprio `INSTALAR`
 com `enterprise: true`; *service policies* com LLM-as-a-judge, **Omnigent** e **Genie App Builder** são etapas manuais,
-no [final](#-etapas-manuais-no-final).
+no [final](#-etapas-manuais-e-roteiro-de-testes-no-final).
 
 ---
 
@@ -506,9 +506,21 @@ Para usar: abra o Genie, ative o **Agent mode** e faça login no Google na prime
 
 ---
 
-## 🖐 Etapas manuais (no final)
+## 🖐 Etapas manuais e roteiro de testes (no final)
 
-Feitas **por você, pela interface**, depois do `INSTALAR`. Nenhuma delas impede o App de subir.
+Feitas **por você, pela interface**, depois do `INSTALAR`, **na ordem**: elas são também o roteiro de testes do lab.
+O passo a passo completo, com consultas prontas e o resultado esperado de cada teste, está no fim do notebook `INSTALAR`.
+Nenhuma delas impede o App de subir.
+
+| # | Etapa | Resumo |
+|:-:|-------|--------|
+| 1 | 📅 Google Calendar no App | conectar o `system.ai.google_calendar` e liberar o escopo `ai-gateway` do App |
+| 2 | 📧 Genie One + Gmail | do dado ao e-mail |
+| 3 | 🧪 MCP Detetive no Playground | busca visual com a foto de exemplo do Volume |
+| 4 | ✅ Roteiro de testes | **4a** cada componente sozinho (SQL, Serving, Genie, Playground) · **4b** tudo junto no App (17 passos) |
+| 5 | 🛡️ Service policies com **LLM-as-a-judge** | *só workspace corporativo (Beta)* |
+| 6 | 🤖 **Omnigent** | *só workspace corporativo (Beta)* |
+| 7 | 🧱 **Genie App Builder** | *só workspace corporativo (Beta)* |
 
 ### 1) 📅 Google Calendar no App
 Para o App criar o evento da entrega na **sua** agenda: (a) *AI Gateway → MCP → `system.ai.google_calendar` → Connect* e
@@ -516,21 +528,7 @@ faça login no Google; (b) *Compute → Apps → `brickstore` → Edit → User 
 Save → Deploy. Detalhes em [Chegada do pedido na agenda](#-chegada-do-pedido-na-agenda-appbackendagendapy). Sem isso,
 o botão de agenda usa o link do Google Agenda e o arquivo `.ics`.
 
-### 2) 🧪 AI Playground com o MCP Detetive (GPT OSS 120B)
-1. **AI Playground** → modelo **GPT OSS 120B**.
-2. **Tools → + Add tool → MCP servers → Databricks Apps → `mcp-detetive-produtos`** (aparece *Tools (1)*).
-3. **Busca visual:** suba a foto de um produto para o Volume `midia/imagens_busca/` (ou use uma que você já enviou na
-   página *Detetive* do App, que também fica lá). Quem "enxerga" a foto é o próprio MCP. Cole e envie:
-   > tem na BrickStore algo parecido com o produto da foto /Volumes/brickstore/varejo/midia/imagens_busca/<sua_foto>.jpg?
-4. Outros pedidos para o mesmo MCP: *"Quem comprou o sofá mais vendido também levou o quê? Monte um kit compre junto."*,
-   *"Monte um kit de corrida até R$ 800"*.
-5. Opcional: adicione também o MCP gerenciado **`system.ai.google_calendar`** (pede login no Google na primeira vez) e peça
-   *"Encontre uma luminária de piso para sala escandinava até R$ 400 e agende a entrega para sábado às 10h."*
-
-> Se a conversa der erro, abra uma conversa nova. Evite o **Qwen3 Next** aqui: às vezes ele escreve a chamada de ferramenta
-> como texto (`<tool_call>...`) em vez de executá-la.
-
-### 3) 📧 Genie One + Gmail (do dado ao e-mail)
+### 2) 📧 Genie One + Gmail (do dado ao e-mail)
 O **Genie One** é o "pergunte ao Genie" do workspace inteiro: não precisa abrir um Genie Agent específico.
 1. Conecte o Gmail uma vez: *AI Gateway → MCP → `system.ai.gmail` → Connect* (login com a sua conta Google).
 2. Abra o **Genie One** (botão **Genie** no topo do workspace / Databricks One).
@@ -541,15 +539,36 @@ O **Genie One** é o "pergunte ao Genie" do workspace inteiro: não precisa abri
 Outras ideias: *"mande para o meu e-mail os 5 pedidos em transporte mais caros de hoje"* (usa `vw_pedidos_todos`, ao vivo com o
 Lakebase) e *"envie um e-mail com a previsão de receita de Eletrônicos para as próximas 4 semanas"* (`previsao_vendas`).
 
-### 4) 🏢 Só no workspace corporativo (Beta)
-⚠️ **Antes, habilite os previews (Beta)** em *Settings → Previews* (admin do workspace): **Unity Gateway Service
-Policies**, **Omnigent** e **Governed agentic app-building**. Passo a passo em [`docs/ENTERPRISE.md`](docs/ENTERPRISE.md):
+### 3) 🧪 AI Playground com o MCP Detetive (GPT OSS 120B)
+A etapa 02 deixa uma foto de exemplo no Volume: `/Volumes/brickstore/varejo/midia/exemplos/tenis_corrida_azul.jpg`.
+1. **AI Playground** → modelo **GPT OSS 120B**.
+2. **Tools → + Add tool → MCP servers → Databricks Apps → `mcp-detetive-produtos`** (aparece *Tools (1)*).
+3. Cole e envie (quem "enxerga" a foto é o próprio MCP):
+   > tem na BrickStore algo parecido com o produto da foto /Volumes/brickstore/varejo/midia/exemplos/tenis_corrida_azul.jpg?
+4. Outros pedidos: *"Quem comprou o Sofá Modular 3 Lugares também comprou o quê?"*, *"Monte um kit de corrida até R$ 800"*.
 
-| Etapa manual | O que fazer |
-|--------------|-------------|
-| **Service policies** com **LLM-as-a-judge** | No model service `assistente_llm`: policies de escopo da loja e de concorrência (prompts prontos). O chat mostra o selo 🛡️ Unity Gateway quando uma policy bloqueia |
-| **Omnigent** | Sessão no repositório do lab com Smart Routing, os MCPs e as policies que o workspace já tem |
-| **Genie App Builder** | App simples *Vendas da BrickStore* a partir de um pedido pronto |
+> Se a conversa der erro, abra uma conversa nova. Evite o **Qwen3 Next** aqui: às vezes ele escreve a chamada de ferramenta
+> como texto (`<tool_call>...`) em vez de executá-la.
+
+### 4) ✅ Roteiro de testes
+- **4a · cada componente sozinho:** dados, Vector Search (`vector_search()` no SQL), `ai_parse_document`, regras, modelo
+  de ML, recomendador servido, `ai_forecast`, Lakebase, Genie, roteador do Unity Gateway, MCP, dashboard e (com
+  `enterprise: true`) SAC por voz. Cada um com a consulta e o resultado esperado.
+- **4b · tudo junto no App:** a história de uma cliente: perfil → busca semântica → Detetive com a foto de exemplo →
+  Assistente monta um setup → *"coloca o monitor na minha sacola"* → compra → pedido ao vivo no Genie (`origem = lakebase`)
+  → agenda → devolução com protocolo → Analista → memória (recarregar e *"o que eu te perguntei antes?"*) → guardrails →
+  Estúdio (ficha PDF, previsão) → SAC por voz.
+
+### 5) 🛡️ Service policies com LLM-as-a-judge · 6) 🤖 Omnigent · 7) 🧱 Genie App Builder
+⚠️ **Só no workspace corporativo, em Beta.** Antes, um admin habilita em *Settings → Previews*: **Unity Gateway Service
+Policies** (5), **Omnigent** (6) e **Governed agentic app-building** (7). O passo a passo está no fim do `INSTALAR` e em
+[`docs/ENTERPRISE.md`](docs/ENTERPRISE.md):
+
+| # | Etapa | O que fazer |
+|:-:|-------|-------------|
+| 5 | **Service policies** | No model service `assistente_llm`: policies built-in de dados sensíveis e jailbreak + `brickstore_escopo_loja` e `brickstore_concorrencia` com **LLM-as-a-judge** (Claude Haiku 4.5, prompts prontos). O chat mostra o selo 🛡️ Unity Gateway quando uma policy bloqueia |
+| 6 | **Omnigent** | Sessão no repositório do lab com Smart Routing, os MCPs e as policies que o workspace já tem; 4 pedidos de teste |
+| 7 | **Genie App Builder** | App simples *Vendas da BrickStore* a partir de um pedido pronto; teste junto com uma compra na loja |
 
 ---
 
@@ -584,6 +603,7 @@ brickstore/
 │   └── static/                  ← frontend (HTML/CSS/JS puro, sem build) + arte SVG procedural dos produtos
 ├── dados/                       ← 📦 dados prontos (Parquet + manifesto.json): produtos, clientes, pedidos, itens, navegação…
 ├── audios_sac/                  ← 6 ligações do SAC (MP3) + roteiros, transcritas pelo Whisper (etapa 05a, enterprise)
+├── imagens_exemplo/             ← foto de exemplo para a busca visual (copiada para midia/exemplos/ pela etapa 02)
 ├── documentos/                  ← PDFs da central de ajuda
 ├── fichas/                      ← fichas técnicas de fornecedor (PDF com tabelas e fotos) para o Estúdio
 ├── dashboards/                  ← JSON do dashboard AI Gateway Usage Analytics

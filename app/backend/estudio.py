@@ -194,9 +194,12 @@ def _recortar_figuras(parsed: dict, chave: str) -> list[dict]:
     return out
 
 
-def processar_ficha(nome_arquivo: str, dados: bytes | None = None, caminho_existente: str | None = None) -> dict:
-    """PDF da ficha técnica → ai_parse_document (texto + tabelas + imagens) → cadastro estruturado pelo LLM → rascunho."""
+def processar_ficha(nome_arquivo: str, dados: bytes | None = None, caminho_existente: str | None = None,
+                    progresso=lambda passo: None) -> dict:
+    """PDF da ficha técnica → ai_parse_document (texto + tabelas + imagens) → cadastro estruturado pelo LLM → rascunho.
+    `progresso(n)` é chamado no início de cada etapa REAL (0 envio, 1 ai_parse_document, 2 figuras, 3 LLM, 4 fim)."""
     chave = "ft" + time.strftime("%y%m%d%H%M%S")
+    progresso(0)
     if caminho_existente:
         caminho = caminho_existente
     else:
@@ -206,6 +209,7 @@ def processar_ficha(nome_arquivo: str, dados: bytes | None = None, caminho_exist
         caminho = f"{S.VOL_MIDIA}/fichas/{chave}/{nome}"
         S.upload(caminho, dados)
     t0 = time.time()
+    progresso(1)
     linhas = S.sql(f"""SELECT to_json(ai_parse_document(content, map(
                           'version', '2.0', 'imageOutputPath', :img, 'descriptionElementTypes', '*'))) AS j
                        FROM read_files(:p, format => 'binaryFile')""",
@@ -213,8 +217,10 @@ def processar_ficha(nome_arquivo: str, dados: bytes | None = None, caminho_exist
     parsed = json.loads(linhas[0]["j"])
     seg = round(time.time() - t0, 1)
     elementos = parsed.get("document", {}).get("elements", [])
+    progresso(2)
     figuras = _recortar_figuras(parsed, chave)
     conteudo = _texto_elementos(elementos)
+    progresso(3)
     r = S.chat([{"role": "user", "content": PROMPT_FICHA.format(
         departamentos=", ".join(d["nome"] for d in CATALOGO.departamentos()), tipos=", ".join(sorted(CATALOGO.icone_por_tipo)),
         estilos=", ".join(e["estilo_id"] for e in CATALOGO.estilos), conteudo=conteudo[:14000])}], max_tokens=1000, temperature=0)
@@ -229,6 +235,7 @@ def processar_ficha(nome_arquivo: str, dados: bytes | None = None, caminho_exist
     S.sql(f"INSERT INTO {S.fq('fichas_parseadas')} SELECT :c, :a, :p, parse_json(:j), NULL, current_timestamp()",
           {"c": chave, "a": nome_arquivo, "p": caminho, "j": linhas[0]["j"]})
     foto = figuras[0]["caminho"] if figuras else None  # a 1ª figura da ficha é a foto principal
+    progresso(4)
     return {"chave": chave, "arquivo": nome_arquivo, "caminho": caminho, "segundos_parse": seg, "elementos": tipos,
             "tabelas_html": [e.get("content") for e in elementos if e.get("type") == "table"], "figuras": figuras,
             "imagem_path": foto, "ficha": ficha, "texto_extraido": conteudo[:6000]}

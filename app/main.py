@@ -143,6 +143,7 @@ def pedido(request: Request, cliente_id: str = Body(...), itens: list[dict] = Bo
     except Exception as e:
         log.warning("agenda automática falhou: %s", str(e)[:150])
         na_agenda = None
+    _OPCOES_PREV["v"] = None   # a lista de produtos da Previsão passa a incluir esta compra na próxima abertura
     return {"pedido_id": pid, "valor_total": total, "frete": frete, "agenda": na_agenda, "gravado_em": gravado_em,
             "previsao_entrega": agenda.previsao_entrega(pid, time.strftime("%Y-%m-%d"), "Em transporte"),
             "sugestoes": sorted(sugestoes.values(), key=lambda r: r["lift"] or 0, reverse=True)[:6]}
@@ -318,17 +319,40 @@ def previsao_sob_demanda(filtro_tipo: str = Body("total", embed=True), valor: st
         raise HTTPException(400, str(e))
 
 
+# ───────────── progresso REAL de tarefas longas (a tela consulta enquanto espera a resposta) ─────────────
+_PROGRESSO: dict[str, tuple[int, float]] = {}
+
+
+def _marcador(tarefa: str | None):
+    """Devolve progresso(n), que registra a etapa em que a tarefa está (em memória: o App roda numa instância)."""
+    if not tarefa or not re.fullmatch(r"[A-Za-z0-9_-]{6,40}", tarefa):
+        return lambda passo: None
+    agora = time.time()
+    for k in [k for k, (_, t) in _PROGRESSO.items() if agora - t > 900]:   # limpa tarefas antigas
+        _PROGRESSO.pop(k, None)
+    return lambda passo: _PROGRESSO.__setitem__(tarefa, (int(passo), time.time()))
+
+
+@app.get("/api/progresso/{tarefa}")
+def progresso(tarefa: str):
+    passo, _ = _PROGRESSO.get(tarefa, (-1, 0))
+    return {"passo": passo}
+
+
 # ───────────────────────────── Detetive de Produtos ─────────────────────────────
 @app.post("/api/detetive")
-async def detetive(imagem: UploadFile = File(...), quantidade: int = Form(3)):
+async def detetive(imagem: UploadFile = File(...), quantidade: int = Form(3), tarefa: str | None = Form(None)):
     _pronto()
     dados = await imagem.read()
     if len(dados) > 10 * 1024 * 1024:
         raise HTTPException(413, "Imagem maior que 10 MB")
 
+    marcar = _marcador(tarefa)
+
     def rodar():
+        marcar(0)
         caminho = salvar_imagem(dados)
-        return {"caminho": caminho, **investigar(dados, quantidade)}
+        return {"caminho": caminho, **investigar(dados, quantidade, marcar)}
     return await asyncio.to_thread(rodar)
 
 
@@ -482,16 +506,18 @@ def estudio_fichas_exemplo():
 
 
 @app.post("/api/estudio/fichas")
-async def estudio_ficha(arquivo: UploadFile | None = File(None), exemplo: str | None = Form(None)):
+async def estudio_ficha(arquivo: UploadFile | None = File(None), exemplo: str | None = Form(None),
+                        tarefa: str | None = Form(None)):
     """Cadastro a partir de PDF: envia a ficha técnica do fornecedor (ou escolhe um exemplo) e recebe o rascunho."""
     _pronto()
+    marcar = _marcador(tarefa)
     if exemplo:
-        return await asyncio.to_thread(estudio.processar_ficha, exemplo.rsplit("/", 1)[-1], None, exemplo)
+        return await asyncio.to_thread(estudio.processar_ficha, exemplo.rsplit("/", 1)[-1], None, exemplo, marcar)
     if not arquivo:
         raise HTTPException(400, "Envie um PDF")
     dados = await arquivo.read()
     try:
-        return await asyncio.to_thread(estudio.processar_ficha, arquivo.filename, dados)
+        return await asyncio.to_thread(estudio.processar_ficha, arquivo.filename, dados, None, marcar)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
