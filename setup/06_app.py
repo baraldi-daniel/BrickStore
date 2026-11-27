@@ -117,6 +117,8 @@ env:
     value: "{LLM_JUIZ}"
   - name: NB_LLM_CHAT
     value: "{ROTEADOR_LLM}"
+  - name: NB_ROTEADOR_DESTINOS
+    value: "{",".join(m for m in (ROTEADOR["a"], ROTEADOR["b"], ROTEADOR["fallback"]) if m) if ROTEADOR_LLM else ""}"
   - name: NB_GENIE_SPACE_ID
     value: "{GENIE_SPACE_ID}"
   - name: NB_RECOMENDADOR

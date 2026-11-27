@@ -79,16 +79,48 @@ def analisar_atendimento(texto: str) -> dict:
     return r
 
 
+_PROTOCOLO_OK = {"ok": False}
+
+
+def _garantir_protocolo() -> None:
+    """A coluna protocolo liga a ligação à solicitação aberta no SAC (tabelas de instalações antigas não têm)."""
+    if _PROTOCOLO_OK["ok"]:
+        return
+    cols = {c["col_name"] for c in S.sql(f"DESCRIBE TABLE {S.fq('atendimentos_voz')}")}
+    if "protocolo" not in cols:
+        S.sql(f"ALTER TABLE {S.fq('atendimentos_voz')} ADD COLUMNS (protocolo STRING)")
+    _PROTOCOLO_OK["ok"] = True
+
+
 def atendimentos(cliente_id: str | None = None, limite: int = 50) -> list[dict]:
-    filtro = "WHERE cliente_id = :c" if cliente_id else ""
-    return S.sql(f"""SELECT arquivo, duracao_seg, transcricao, fonte_transcricao, categoria, sentimento, pedido_id,
-                            status_pedido, produto, motivo, cliente_id, processado_em
-                     FROM {S.fq('atendimentos_voz')} {filtro} ORDER BY processado_em DESC, arquivo LIMIT {int(limite)}""",
+    """Ligações (todas, no modo admin; ou de um cliente), com o nome do cliente e o protocolo do SAC, se houver."""
+    _garantir_protocolo()
+    filtro = "WHERE a.cliente_id = :c" if cliente_id else ""
+    return S.sql(f"""SELECT a.arquivo, a.duracao_seg, a.transcricao, a.fonte_transcricao, a.categoria, a.sentimento, a.pedido_id,
+                            a.status_pedido, a.produto, a.motivo, a.cliente_id, c.nome AS cliente_nome, a.protocolo, a.processado_em
+                     FROM {S.fq('atendimentos_voz')} a LEFT JOIN {S.fq('clientes')} c USING (cliente_id)
+                     {filtro} ORDER BY a.processado_em DESC, a.arquivo LIMIT {int(limite)}""",
                  {"c": cliente_id} if cliente_id else None)
+
+
+def exemplos() -> list[str]:
+    """As ligações prontas que a etapa 05a copiou para o Volume (midia/audios_sac/sac_*.mp3)."""
+    itens = S.ws().files.list_directory_contents(f"{S.VOL_MIDIA}/audios_sac")
+    return sorted(i.name for i in itens if re.fullmatch(r"sac_\d{2}_[a-z_]+\.mp3", i.name or ""))
+
+
+def vincular(arquivo: str, protocolo: str, pedido_id: str, cliente_id: str) -> None:
+    """Grava na ligação o protocolo aberto no SAC e o pedido/cliente corrigidos (se o Whisper errou o número)."""
+    _garantir_protocolo()
+    S.sql(f"""UPDATE {S.fq('atendimentos_voz')} SET protocolo = :pr, pedido_id = :p, cliente_id = :c,
+                     status_pedido = (SELECT status FROM {S.fq('pedidos')} WHERE pedido_id = :p)
+              WHERE arquivo = :a OR arquivo = regexp_extract(:a, '[^/]+$', 0)""",   # ligações prontas: só o nome do arquivo
+          {"pr": protocolo, "p": pedido_id, "c": cliente_id, "a": arquivo})
 
 
 def registrar(arquivo: str, transcricao: str, duracao_seg, analise: dict, cliente_id: str | None, fonte: str) -> None:
     """Grava o atendimento processado no App em atendimentos_voz (aparece na aba e no Genie)."""
+    _garantir_protocolo()
     S.sql(f"""INSERT INTO {S.fq('atendimentos_voz')} (arquivo, duracao_seg, transcricao, fonte_transcricao, categoria, sentimento,
                                                      pedido_id, produto, motivo, cliente_id, status_pedido, processado_em)
               SELECT :arq, CAST(:dur AS DOUBLE), :txt, :fonte, :cat, :sent, :ped, :prod, :mot,

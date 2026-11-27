@@ -2,14 +2,14 @@
 
 Extras que dependem de recursos disponíveis em workspaces corporativos (em preview). O lab funciona sem eles: o App
 é o mesmo, só sem essas partes. O SAC por voz entra pelo `INSTALAR` com `enterprise: true` no `config.yaml`; os outros
-você segue pela interface, com os passos abaixo, **no final**, depois do `INSTALAR` (etapas manuais 5, 6 e 7 do roteiro do `INSTALAR`).
+você segue pela interface, com os passos abaixo, **no final**, depois do `INSTALAR` (parte C do roteiro manual do `INSTALAR`: C1, C2 e C3).
 
 | # | Extra | O que mostra | Onde |
 |:-:|-------|--------------|------|
 | 0 | **SAC por voz** com **Whisper** | Grave no microfone ou use ligações prontas: viram atendimentos (categoria, sentimento, pedido) na aba 📞 do Estúdio | `config.yaml` → `enterprise: true` + `INSTALAR` |
-| 5 | **Service policies do Unity Gateway** com **LLM-as-a-judge** | Guardrails gerenciados no model service do Assistente, sem mudar o código do App | Unity Gateway → Models → `assistente_llm` → Policies |
-| 6 | **Omnigent** | Agentes de código trabalhando no repositório do lab com **Smart Routing**, os MCPs e as **policies** que o workspace já tem | `<workspace>/omnigent` |
-| 7 | **Genie App Builder** | Um App simples do BrickStore (*Vendas da BrickStore*) criado por linguagem natural sobre as mesmas tabelas | Apps → **Build** |
+| C1 | **Service policies do Unity Gateway** com **LLM-as-a-judge** | Guardrails gerenciados no model service do Assistente, sem mudar o código do App | Unity Gateway → Models → `assistente_llm` → Policies |
+| C2 | **Omnigent** | Agentes de código trabalhando no repositório do lab com **Smart Routing**, os MCPs e as **policies** que o workspace já tem | `<workspace>/omnigent` |
+| C3 | **Genie App Builder** | Um App simples do BrickStore (*Vendas da BrickStore*) criado por linguagem natural sobre as mesmas tabelas | Apps → **Build** |
 
 > ### ⚠️ Antes de tudo: habilite os previews (Beta)
 > Todos estão em **Beta** e vêm **desligados**. Um admin do workspace liga em
@@ -49,11 +49,16 @@ transcreve as ligações; depois as funções de IA estruturam cada atendimento:
   Model Serving. Precisa de saída para o Hugging Face no momento da instalação. Se algo faltar, as etapas são puladas e
   o App segue igual.
 
-**No App: Estúdio → 📞 SAC por voz** (a aba só aparece quando o Whisper e a tabela existem):
+**No App: marque Admin no topo → Estúdio → 📞 SAC por voz** (a aba só aparece quando o Whisper e a tabela existem; no modo admin
+ela mostra as ligações de **todos** os clientes):
 - **🎙️ Gravar agora:** grave no microfone do navegador (até 60 s); o áudio vira WAV 16 kHz no próprio navegador, passa
   pelo Whisper e pela análise, e entra no histórico.
 - **📞 Ligações prontas:** as 6 ligações gravadas antes, já transcritas na instalação. *Transcrever agora* roda o Whisper ao vivo.
-- **📁 Enviar um arquivo** (.wav ou .mp3) e o **histórico** de `atendimentos_voz`.
+- **📁 Enviar um arquivo** (.wav ou .mp3) e o **histórico** de `atendimentos_voz`, com o cliente de cada ligação.
+- **Cadastrar no SAC:** abre a solicitação (troca, devolução, garantia ou reclamação) ligada ao **pedido** citado na ligação.
+  O pedido fica editável (o Whisper pode errar um dígito) e o cliente é o dono do pedido; a solicitação aparece em
+  *Meus pedidos* desse cliente e na lista *Solicitações do SAC* da aba.
+- **🎙️ no Assistente:** com o Whisper ligado, o chat ganha um botão de microfone: a fala vira texto e vai para os agentes.
 
 ```sql
 SELECT arquivo, fonte_transcricao, categoria, sentimento, pedido_id, status_pedido, produto, motivo
@@ -67,7 +72,7 @@ ocioso até desligar). O padrão já é CPU, o mais barato; para gastar ainda me
 
 ---
 
-## 5. Service policies do Unity Gateway (LLM-as-a-judge)
+## C1. Service policies do Unity Gateway (LLM-as-a-judge)
 
 O Assistente chama o LLM pelo model service do próprio lab, **`<catalog>.<schema>.assistente_llm`** (etapa
 `setup/05b_roteador_llm`). As *service policies* ficam **só nesse serviço**: não afetam os modelos `system.ai.*` nem
@@ -170,7 +175,7 @@ WHERE categoria = 'unity_gateway' ORDER BY data_hora DESC;
 
 ---
 
-## 6. Omnigent
+## C2. Omnigent
 
 O **Omnigent** é a camada da Databricks sobre agentes de código (Claude Code, Codex e agentes próprios), com o
 acesso aos modelos pelo Unity Gateway e **policies** que decidem cada ação do agente (ALLOW, ASK ou DENY). Aqui ele
@@ -197,7 +202,7 @@ Documentação: [Omnigent na Databricks](https://docs.databricks.com/omnigent/) 
 
 ---
 
-## 7. Genie App Builder
+## C3. Genie App Builder
 
 O **Genie App Builder** cria um **Databricks App** (com AppKit) a partir de uma descrição em linguagem natural: você
 vê a prévia, refina com novos pedidos e publica. Aqui ele gera um App **simples**, de uma tela só: *Vendas da

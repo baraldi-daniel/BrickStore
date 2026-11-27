@@ -859,3 +859,19 @@ pre.sql { margin: 0; font-family: var(--mono); font-size: 12px; background: var(
 @keyframes pulsa { 50% { opacity: .65; } }
 
 .fc-aviso { background: #FFF7E6; border-color: #F5C26B; color: #6B4A00; font-size: 13px; margin-bottom: 10px; }
+
+/* 🛠️ modo admin + 📞 SAC + 🎙️ microfone do chat */
+body:not(.admin) .so-admin { display: none !important; }
+.admin-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: #fff; opacity: .85; cursor: pointer; user-select: none; }
+.admin-toggle input { accent-color: #FF3621; width: 15px; height: 15px; }
+body.admin .admin-toggle { opacity: 1; color: #FF5F46; }
+.pedido-sac { margin: 8px 0 0; padding: 8px 12px; border-radius: 10px; background: rgba(0, 169, 114, .07); border: 1px solid rgba(0, 169, 114, .3); font-size: 13px; display: grid; gap: 2px; }
+.pedido-sac small { color: var(--ink2); }
+.voz-sac { min-width: 150px; }
+.voz-sac-form { display: grid; gap: 6px; }
+.voz-sac-form label { display: grid; gap: 2px; font-size: 11px; font-weight: 700; color: var(--ink2); }
+.voz-sac-form input, .voz-sac-form select { font: inherit; font-size: 12px; padding: 4px 6px; border: 1px solid var(--oat2); border-radius: 6px; }
+.chat-mic { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--oat2); background: #fff; color: var(--ink2); cursor: pointer; }
+.chat-mic.gravando { background: #b4231a; color: #fff; border-color: #b4231a; animation: pulsa 1.2s ease-in-out infinite; }
+
+.painel-modelo select { font: inherit; padding: 8px 10px; border: 1px solid var(--oat2); border-radius: 8px; min-width: 420px; max-width: 100%; }

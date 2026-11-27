@@ -51,7 +51,12 @@ def _pronto():
 @app.get("/api/config")
 def config():
     return {"marca": S.MARCA, "slogan": "Tudo para o seu estilo, com inteligência de dados", "dominio": S.dominio(),
-            "memoria": memoria.ativa()}
+            "memoria": memoria.ativa(), "whisper": _whisper_ligado()}
+
+
+def _whisper_ligado() -> bool:
+    from backend import voz
+    return voz.disponivel()
 
 
 @app.get("/api/saude")
@@ -169,6 +174,14 @@ def meus_pedidos(cliente_id: str):
         p = CATALOGO.produtos.get(l["produto_id"])
         if p:
             ped["itens"].append({**CATALOGO.resumo(p), "quantidade": l["quantidade"]})
+    try:   # solicitações do SAC (troca, garantia, reclamação…) ligadas a cada pedido, inclusive as abertas por voz
+        for sol in S.sql(f"""SELECT protocolo, pedido_id, tipo, motivo, status, prazo, CAST(aberto_em AS STRING) AS aberto_em
+                             FROM {lakebase.tabela('solicitacoes_atendimento')} WHERE cliente_id = :c ORDER BY aberto_em DESC""",
+                         {"c": cliente_id}):
+            if sol["pedido_id"] in pedidos:
+                pedidos[sol["pedido_id"]].setdefault("solicitacoes", []).append(sol)
+    except Exception as e:
+        log.warning("solicitações indisponíveis (%s)", str(e)[:120])
     return {"pedidos": list(pedidos.values())[:25]}
 
 
@@ -277,13 +290,80 @@ RX_EXEMPLO_VOZ = re.compile(r"^sac_\d{2}_[a-z_]+\.mp3$")
 @app.get("/api/voz/exemplos")
 def voz_exemplos():
     """As ligações prontas do repositório (audios_sac/), já copiadas para o Volume pela etapa 05a."""
-    import json as _json
+    from backend import voz
     try:
-        roteiros = _json.load(open(os.path.join(AQUI, "..", "audios_sac", "roteiros.json"), encoding="utf-8"))
-    except Exception:
-        roteiros = []
-    nomes = [r["arquivo"] for r in roteiros if RX_EXEMPLO_VOZ.match(r.get("arquivo", ""))]
+        nomes = voz.exemplos()
+    except Exception as e:
+        log.warning("SAC por voz: não listei as ligações prontas (%s)", str(e)[:120])
+        nomes = []
     return {"exemplos": [{"arquivo": n, "audio_url": _audio_url(n)} for n in nomes]}
+
+
+@app.post("/api/voz/transcrever")
+async def voz_transcrever(audio: UploadFile = File(...)):
+    """🎙️ Microfone do Assistente: só transcreve com o Whisper (a pergunta vai para o chat como texto)."""
+    import uuid as _uuid
+    from backend import voz
+    if not voz.disponivel():
+        raise HTTPException(404, "Whisper não instalado neste workspace (config.yaml → enterprise: true).")
+    dados = await audio.read()
+    if len(dados) > 10 * 1024 * 1024:
+        raise HTTPException(413, "Áudio muito grande (máx. 10 MB).")
+    caminho = f"{S.VOL_MIDIA}/audios_sac/chat/{_uuid.uuid4().hex[:10]}.wav"
+    await asyncio.to_thread(S.upload, caminho, dados)
+    tr = await asyncio.to_thread(voz.transcrever_volume, caminho)
+    if not (tr or {}).get("texto"):
+        raise HTTPException(422, "Não entendi o áudio" + (f" ({tr.get('erro')})" if (tr or {}).get("erro") else "") + ".")
+    return {"texto": tr["texto"]}
+
+
+@app.post("/api/voz/solicitacao")
+def voz_solicitacao(arquivo: str = Body(...), pedido_id: str = Body(...), tipo: str = Body(...), motivo: str = Body(...)):
+    """Cadastra a ligação no SAC: abre a solicitação (protocolo) para o PEDIDO e liga a ligação a ela.
+    O cliente é o dono do pedido (no modo admin dá para atender qualquer cliente)."""
+    from backend import voz
+    from backend.mcp_detetive import abrir_solicitacao
+    pedido_id = re.sub(r"[^A-Za-z0-9]", "", pedido_id or "").upper()
+    if not re.fullmatch(r"P\d{7}|P\d{12}", pedido_id):
+        raise HTTPException(400, "Informe o número do pedido (ex.: P0011655).")
+    dono = S.sql(f"SELECT cliente_id FROM {lakebase.tabela('pedidos')} WHERE pedido_id = :p LIMIT 1", {"p": pedido_id})
+    if not dono:
+        raise HTTPException(404, f"Pedido {pedido_id} não encontrado.")
+    cliente_id = dono[0]["cliente_id"]
+    r = abrir_solicitacao(cliente_id=cliente_id, tipo=tipo, pedido_id=pedido_id, motivo=(motivo or "")[:500])
+    if r.get("erro"):
+        raise HTTPException(400, r["erro"])
+    try:
+        voz.vincular(arquivo, r["protocolo"], pedido_id, cliente_id)
+    except Exception as e:
+        log.warning("SAC por voz: não liguei a ligação ao protocolo (%s)", str(e)[:150])
+    nome = S.sql(f"SELECT nome FROM {S.fq('clientes')} WHERE cliente_id = :c", {"c": cliente_id})
+    return {**r, "cliente_id": cliente_id, "cliente_nome": nome[0]["nome"] if nome else None}
+
+
+@app.get("/api/admin/modelo")
+def admin_modelo():
+    """Modo admin: qual modelo o Assistente usa agora e as opções (roteador × modelo direto)."""
+    return {"atual": S.MODELO_ASSISTENTE["atual"], "opcoes": S.opcoes_modelo()}
+
+
+@app.post("/api/admin/modelo")
+def admin_trocar_modelo(id: str = Body(..., embed=True)):
+    if id not in {o["id"] for o in S.opcoes_modelo()}:
+        raise HTTPException(400, "modelo fora das opções")
+    S.MODELO_ASSISTENTE["atual"] = id
+    log.info("admin: Assistente agora usa %s", id)
+    return {"atual": id}
+
+
+@app.get("/api/admin/solicitacoes")
+def admin_solicitacoes():
+    """Modo admin: as solicitações mais recentes do SAC, de TODOS os clientes."""
+    return {"solicitacoes": S.sql(f"""SELECT s.protocolo, s.pedido_id, s.tipo, s.motivo, s.status, s.prazo,
+                                             CAST(s.aberto_em AS STRING) AS aberto_em, c.nome AS cliente_nome
+                                      FROM {lakebase.tabela('solicitacoes_atendimento')} s
+                                      LEFT JOIN {S.fq('clientes')} c USING (cliente_id)
+                                      ORDER BY s.aberto_em DESC LIMIT 30""")}
 
 
 @app.post("/api/voz/exemplo")
@@ -365,9 +445,10 @@ async def upload_imagem(imagem: UploadFile = File(...)):
 # ───────────────────────────── Assistente (agente) ─────────────────────────────
 @app.post("/api/chat")
 def chat(request: Request, mensagens: list[dict] = Body(..., embed=True), imagem: str | None = Body(None, embed=True),
-         cliente_id: str | None = Body(None, embed=True), conversa_id: str | None = Body(None, embed=True)):
+         cliente_id: str | None = Body(None, embed=True), conversa_id: str | None = Body(None, embed=True),
+         sacola: list[str] | None = Body(None, embed=True)):
     _pronto()
-    return agente.conversar(mensagens, imagem, cliente_id, request.headers.get("x-forwarded-access-token"), conversa_id)
+    return agente.conversar(mensagens, imagem, cliente_id, request.headers.get("x-forwarded-access-token"), conversa_id, sacola)
 
 
 @app.get("/api/chat/memoria")

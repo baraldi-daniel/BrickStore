@@ -84,7 +84,7 @@ FERRAMENTAS_LOCAIS = [
 
 
 def conversar(mensagens: list[dict], imagem: str | None = None, cliente_id: str | None = None,
-              token_usuario: str | None = None, conversa_id: str | None = None) -> dict:
+              token_usuario: str | None = None, conversa_id: str | None = None, sacola_atual: list[str] | None = None) -> dict:
     """Ponto de entrada síncrono (roda em thread do FastAPI): executa o grafo LangGraph."""
     from . import grafo
-    return asyncio.run(grafo.executar(mensagens, imagem, cliente_id, token_usuario, conversa_id))
+    return asyncio.run(grafo.executar(mensagens, imagem, cliente_id, token_usuario, conversa_id, sacola_atual))

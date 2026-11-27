@@ -70,7 +70,7 @@ Você roda **um único notebook** (`INSTALAR`) e ganha um e-commerce completo co
 | 1 | **Trazer o repositório para o workspace** | No Databricks: **Workspace → Create → Git folder** → cole a URL deste repositório. |
 | 2 | **Rodar o `INSTALAR`** | Abra o notebook `INSTALAR` → **Run all**. Leva de 20 a 30 minutos; a indexação do Vector Search é a parte mais lenta. |
 | 3 | **Explorar** | No fim aparece o link do App. Escolha um cliente em *"Quem está comprando?"* e navegue. |
-| ➕ | **Etapas manuais** (no final) | Google Calendar, Gmail, Playground, o **roteiro de testes** e os extras do workspace corporativo: veja [🖐 Etapas manuais](#-etapas-manuais-e-roteiro-de-testes-no-final). Nenhuma delas impede o App de subir. |
+| ➕ | **Roteiro manual** (no final) | o **roteiro manual** (A componentes, B tudo junto no App, C corporativo) no fim do `INSTALAR`: veja [🖐 Roteiro manual](#-roteiro-manual-no-final). Nenhum passo impede o App de subir. |
 
 > **Nada opcional impede o App de subir.** Se uma parte não estiver disponível no workspace (Lakebase, Whisper,
 > recomendador servido, `ai_forecast`, roteador do Unity Gateway, Genie, Vector Search), a etapa avisa e a instalação
@@ -115,7 +115,7 @@ instalação **segue**: o App grava pedidos no Delta e a memória do chat fica d
 
 **Extras só do workspace corporativo:** o **SAC por voz com Whisper** (aba 📞 no Estúdio) entra no próprio `INSTALAR`
 com `enterprise: true`; *service policies* com LLM-as-a-judge, **Omnigent** e **Genie App Builder** são etapas manuais,
-no [final](#-etapas-manuais-e-roteiro-de-testes-no-final).
+no [roteiro manual](#-roteiro-manual-no-final).
 
 ---
 
@@ -195,9 +195,9 @@ Fora do schema: o App, o Genie *"BrickStore · Genie de Dados"* e o dashboard *"
 | **🔎 Detetive de Produtos** | **Busca visual**: foto de um produto → laudo (tipo, cor, material, estilo) → produtos parecidos com % de compatibilidade | MCP → Llama 4 Maverick (visão) → Vector Search |
 | **Busca** | Busca por significado ("luminária para sala escandinava até R$ 300") | `produtos_index` |
 | **Meus pedidos** | Histórico do cliente | `pedidos` |
-| **💬 Assistente** | Chat com anexo de imagem. Mostra **qual agente atendeu**, as ferramentas usadas, **qual modelo o roteador escolheu** e os selos de **guardrail** | supervisor + 3 agentes + MCP Detetive + MCP do Genie + RAG, via roteador do Unity Gateway |
-| **🎛️ Estúdio** | Painel, **novo produto a partir de PDF**, edição, central de ajuda, página do MCP | `ai_parse_document`, Delta DML, sync do VS |
-| **📞 SAC por voz** (aba do Estúdio, só com `enterprise: true`) | **Gravar no microfone**, ligações prontas com *Transcrever agora*, envio de arquivo e histórico | **Whisper** (Model Serving) + `ai_classify`, `ai_analyze_sentiment`, `ai_extract` |
+| **💬 Assistente** | Chat com anexo de imagem (e 🎙️ microfone, com `enterprise: true`). Mostra **qual agente atendeu**, as ferramentas usadas, **qual modelo respondeu** (🔀) e os selos de **guardrail**; coloca produtos **na sacola de verdade** (`adicionar_a_sacola`) e sabe o que já está nela | supervisor + 3 agentes + MCP Detetive + MCP do Genie + RAG, via roteador do Unity Gateway |
+| **🎛️ Estúdio** (modo **Admin**: checkbox no topo) | Painel, **novo produto a partir de PDF** (com as etapas reais do processamento), edição, previsão, central de ajuda, página do MCP e o **🧠 Modelo do Assistente** (roteador × modelo direto) | `ai_parse_document`, Delta DML, sync do VS, Unity Gateway |
+| **📞 SAC por voz** (aba do Estúdio, só com `enterprise: true`) | **Gravar no microfone**, ligações prontas com *Transcrever agora*, envio de arquivo, histórico de **todos os clientes** e **Cadastrar no SAC**: abre a solicitação ligada ao **pedido** (aparece em *Meus pedidos*) | **Whisper** (Model Serving) + `ai_classify`, `ai_analyze_sentiment`, `ai_extract` + Lakebase |
 
 ### Estúdio: cadastro a partir da ficha técnica (PDF)
 
@@ -506,69 +506,27 @@ Para usar: abra o Genie, ative o **Agent mode** e faça login no Google na prime
 
 ---
 
-## 🖐 Etapas manuais e roteiro de testes (no final)
+## 🖐 Roteiro manual (no final)
 
-Feitas **por você, pela interface**, depois do `INSTALAR`, **na ordem**: elas são também o roteiro de testes do lab.
-O passo a passo completo, com consultas prontas e o resultado esperado de cada teste, está no fim do notebook `INSTALAR`.
-Nenhuma delas impede o App de subir.
+Depois do `INSTALAR`, o fim do próprio notebook traz o **roteiro manual**: uma lista única, na ordem, em que cada linha diz
+**onde clicar**, **o que fazer** e **o que deve acontecer**. Tudo na interface, sem SQL. Nenhum passo impede o App de subir.
 
-| # | Etapa | Resumo |
-|:-:|-------|--------|
-| 1 | 📅 Google Calendar no App | conectar o `system.ai.google_calendar` e liberar o escopo `ai-gateway` do App |
-| 2 | 📧 Genie One + Gmail | do dado ao e-mail |
-| 3 | 🧪 MCP Detetive no Playground | busca visual com a foto de exemplo do Volume |
-| 4 | ✅ Roteiro de testes | **4a** cada componente sozinho (SQL, Serving, Genie, Playground) · **4b** tudo junto no App (17 passos) |
-| 5 | 🛡️ Service policies com **LLM-as-a-judge** | *só workspace corporativo (Beta)* |
-| 6 | 🤖 **Omnigent** | *só workspace corporativo (Beta)* |
-| 7 | 🧱 **Genie App Builder** | *só workspace corporativo (Beta)* |
+| Parte | O quê | Exemplos |
+|:-----:|-------|----------|
+| **A** | Cada componente **sozinho**, na interface do Databricks (A1 a A19) | *Catalog → produtos → Sample Data*; *Serving → brickstore-recomendador → Query endpoint*; *Unity Gateway → assistente_llm → Routing*; Playground perguntando *"qual modelo é você?"* várias vezes (balanço 50/50) e a inference table; MCP Detetive no Playground com a foto de exemplo do Volume (`midia/exemplos/tenis_corrida_azul.jpg`); ligar Gmail e Google Calendar (MCP) e a autorização `ai-gateway` do App |
+| **B** | **Tudo junto no App** (B1 a B25) | comprar um **boné** (busca → + Sacola → Finalizar) e ver o pedido ao vivo no Genie (`origem = lakebase`); Detetive com a foto; Assistente montando um setup e colocando o monitor na sacola; **modo Admin** trocando o modelo do Assistente (roteador × direto); devolução com protocolo em *Meus pedidos*; memória; guardrails; Estúdio (ficha PDF, previsão do boné); com `enterprise: true`, SAC por voz (gravar, cadastrar a reclamação no pedido) e 🎙️ no chat |
+| **C** | Só no **workspace corporativo (Beta)** | **C1** service policies com **LLM-as-a-judge** no `assistente_llm` (criar, testar no Playground em modo Log e bloqueando, e ver o efeito no App: com o roteador aparece o selo 🛡️ Unity Gateway; com o modelo direto, escolhido no modo Admin, não); **C2** Omnigent com Smart Routing; **C3** Genie App Builder (*Vendas da BrickStore*) |
 
-### 1) 📅 Google Calendar no App
-Para o App criar o evento da entrega na **sua** agenda: (a) *AI Gateway → MCP → `system.ai.google_calendar` → Connect* e
-faça login no Google; (b) *Compute → Apps → `brickstore` → Edit → User authorization → + Add scope → `ai-gateway`* →
-Save → Deploy. Detalhes em [Chegada do pedido na agenda](#-chegada-do-pedido-na-agenda-appbackendagendapy). Sem isso,
-o botão de agenda usa o link do Google Agenda e o arquivo `.ics`.
+⚠️ **Parte C em Beta:** antes, um admin habilita em *Settings → Previews*: **Unity Gateway Service Policies** (C1),
+**Omnigent** (C2) e **Governed agentic app-building** (C3). Referência completa em [`docs/ENTERPRISE.md`](docs/ENTERPRISE.md).
 
-### 2) 📧 Genie One + Gmail (do dado ao e-mail)
-O **Genie One** é o "pergunte ao Genie" do workspace inteiro: não precisa abrir um Genie Agent específico.
-1. Conecte o Gmail uma vez: *AI Gateway → MCP → `system.ai.gmail` → Connect* (login com a sua conta Google).
-2. Abra o **Genie One** (botão **Genie** no topo do workspace / Databricks One).
-3. Peça, citando as tabelas da loja:
-   > *Usando as tabelas de `brickstore.varejo`, calcule a receita por departamento dos últimos 30 dias e mande para mim um e-mail com esse resumo.*
-4. O Genie One consulta os dados, monta a tabela e usa o conector Gmail para enviar (ou deixar em rascunho). Confira a sua caixa de entrada.
+### 📅 Chegada do pedido na agenda (resumo do A16–A17)
+(a) *AI Gateway → MCP → `system.ai.google_calendar` → Connect* e login no Google; (b) *Compute → Apps → `brickstore` → Edit →
+User authorization → + Add scope → `ai-gateway`* → Save → Deploy. Sem isso, o botão de agenda usa o link do Google Agenda e
+o arquivo `.ics`. Detalhes em [Chegada do pedido na agenda](#-chegada-do-pedido-na-agenda-appbackendagendapy).
 
-Outras ideias: *"mande para o meu e-mail os 5 pedidos em transporte mais caros de hoje"* (usa `vw_pedidos_todos`, ao vivo com o
-Lakebase) e *"envie um e-mail com a previsão de receita de Eletrônicos para as próximas 4 semanas"* (`previsao_vendas`).
-
-### 3) 🧪 AI Playground com o MCP Detetive (GPT OSS 120B)
-A etapa 02 deixa uma foto de exemplo no Volume: `/Volumes/brickstore/varejo/midia/exemplos/tenis_corrida_azul.jpg`.
-1. **AI Playground** → modelo **GPT OSS 120B**.
-2. **Tools → + Add tool → MCP servers → Databricks Apps → `mcp-detetive-produtos`** (aparece *Tools (1)*).
-3. Cole e envie (quem "enxerga" a foto é o próprio MCP):
-   > tem na BrickStore algo parecido com o produto da foto /Volumes/brickstore/varejo/midia/exemplos/tenis_corrida_azul.jpg?
-4. Outros pedidos: *"Quem comprou o Sofá Modular 3 Lugares também comprou o quê?"*, *"Monte um kit de corrida até R$ 800"*.
-
-> Se a conversa der erro, abra uma conversa nova. Evite o **Qwen3 Next** aqui: às vezes ele escreve a chamada de ferramenta
-> como texto (`<tool_call>...`) em vez de executá-la.
-
-### 4) ✅ Roteiro de testes
-- **4a · cada componente sozinho:** dados, Vector Search (`vector_search()` no SQL), `ai_parse_document`, regras, modelo
-  de ML, recomendador servido, `ai_forecast`, Lakebase, Genie, roteador do Unity Gateway, MCP, dashboard e (com
-  `enterprise: true`) SAC por voz. Cada um com a consulta e o resultado esperado.
-- **4b · tudo junto no App:** a história de uma cliente: perfil → busca semântica → Detetive com a foto de exemplo →
-  Assistente monta um setup → *"coloca o monitor na minha sacola"* → compra → pedido ao vivo no Genie (`origem = lakebase`)
-  → agenda → devolução com protocolo → Analista → memória (recarregar e *"o que eu te perguntei antes?"*) → guardrails →
-  Estúdio (ficha PDF, previsão) → SAC por voz.
-
-### 5) 🛡️ Service policies com LLM-as-a-judge · 6) 🤖 Omnigent · 7) 🧱 Genie App Builder
-⚠️ **Só no workspace corporativo, em Beta.** Antes, um admin habilita em *Settings → Previews*: **Unity Gateway Service
-Policies** (5), **Omnigent** (6) e **Governed agentic app-building** (7). O passo a passo está no fim do `INSTALAR` e em
-[`docs/ENTERPRISE.md`](docs/ENTERPRISE.md):
-
-| # | Etapa | O que fazer |
-|:-:|-------|-------------|
-| 5 | **Service policies** | No model service `assistente_llm`: policies built-in de dados sensíveis e jailbreak + `brickstore_escopo_loja` e `brickstore_concorrencia` com **LLM-as-a-judge** (Claude Haiku 4.5, prompts prontos). O chat mostra o selo 🛡️ Unity Gateway quando uma policy bloqueia |
-| 6 | **Omnigent** | Sessão no repositório do lab com Smart Routing, os MCPs e as policies que o workspace já tem; 4 pedidos de teste |
-| 7 | **Genie App Builder** | App simples *Vendas da BrickStore* a partir de um pedido pronto; teste junto com uma compra na loja |
+> No MCP pelo Playground, se a conversa der erro, abra uma conversa nova. Evite o **Qwen3 Next** ali: às vezes ele
+> escreve a chamada de ferramenta como texto (`<tool_call>...`) em vez de executá-la.
 
 ---
 

@@ -64,6 +64,7 @@ class Estado(TypedDict, total=False):
     mensagens: list[dict]                 # histórico do chat (user/assistant)
     imagem: str | None
     conversa_id: str | None               # id da conversa (o navegador gera; "Nova conversa" troca)
+    sacola_atual: list[str]               # o que está na sacola do cliente AGORA (o navegador manda a cada pergunta)
     memoria: list[dict]                   # 🧠 mensagens de conversas anteriores (Lakebase)
     memoria_info: dict
     cliente_id: str | None
@@ -205,6 +206,10 @@ def _msgs_iniciais(estado: Estado, esp: dict) -> list[dict]:
                                     + "; nunca escreva o código do cliente na resposta]")
         if estado.get("imagem"):
             msgs[-1]["content"] += f"\n\n[imagem anexada: {estado['imagem']}]"
+        sac = estado.get("sacola_atual")
+        if sac is not None:   # o agente responde a verdade sobre a sacola ("você adicionou?")
+            msgs[-1]["content"] += ("\n\n[sacola do cliente agora: " + "; ".join(str(x)[:80] for x in sac[:15]) + "]" if sac
+                                    else "\n\n[sacola do cliente agora: vazia]")
     return msgs
 
 
@@ -216,6 +221,13 @@ def _ferramentas_do(agente: str, config: RunnableConfig) -> list[dict]:
 
 RX_CHAMADA_TEXTO = re.compile(r"\[?\b([a-z_]{4,40})\(([^()]*)\)\]?")
 RX_PEDIDO_AGENDA = re.compile(r"agenda|calend[aá]rio|lembr|lembre|avis[ae] quando", re.I)
+# pedido (imperativo) para pôr na sacola: obriga a ferramenta; "você adicionou?" (pergunta, passado) não conta
+RX_PEDIDO_SACOLA = re.compile(r"\b(coloc[ao]|coloque|adiciona|adicione|bot[ae]|p[õo]e|ponha|inclu[ia]|joga|manda|quero levar|vou levar|"
+                              r"pode (colocar|adicionar|incluir|botar|p[ôo]r))\b.{0,60}\b(sacola|carrinho)\b|"
+                              r"\b(sacola|carrinho)\b.{0,20}\b(coloc[ao]|adiciona|p[õo]e)\b", re.I)
+# resposta que AFIRMA ter colocado na sacola (só vale se a ferramenta rodou de verdade)
+RX_DIZ_QUE_ADICIONOU = re.compile(r"(adicionad[oa]s?|coloquei|adicionei|inclu[íi]d[oa]s?|foi para|est[aá] n[ao]) .{0,40}"
+                                  r"\b(sacola|carrinho)\b", re.I)
 # pergunta sobre a PRÓPRIA conversa: responde pelo histórico/memória, sem obrigar ferramenta
 RX_SOBRE_CONVERSA = re.compile(r"(o que|qual|quais|que)\b.{0,40}\b(te |lhe |eu )?(perguntei|pedi|falei|disse|mandei|enviei|escrevi|"
                                r"procurei|buscamos|vimos)|[uú]ltim[ao]s? (mensage|pergunta|coisa)|"
@@ -261,10 +273,17 @@ def _no_agente(agente: str):
         sobre_conversa = bool(RX_SOBRE_CONVERSA.search(ultima.split("\n\n[")[0]))
         forcar = rodada == 0 and bool(tools) and len(ultima.strip()) > 12 and not sobre_conversa
         # pediu para pôr na agenda e a ferramenta ainda não rodou: obriga a chamada também nas rodadas seguintes
+        tools_chamada = tools
+        # pediu para pôr na sacola e a ferramenta ainda não rodou: nesta chamada o agente só tem ESSA ferramenta e é
+        # obrigado a usá-la (o modelo às vezes só DIZ que colocou)
+        if ("adicionar_a_sacola" in nomes and RX_PEDIDO_SACOLA.search(ultima.split("\n\n[")[0])
+                and "adicionar_a_sacola" not in (estado.get("usadas") or []) and rodada < 3):
+            tools_chamada = [t for t in tools if t["function"]["name"] == "adicionar_a_sacola"]
+            forcar = True
         if ("agendar_entrega" in nomes and not sobre_conversa and RX_PEDIDO_AGENDA.search(ultima.split("\n\n[")[0])
                 and "agendar_entrega" not in (estado.get("usadas") or []) and rodada < 3):
             forcar = True
-        resp, modelo = await asyncio.to_thread(S.chat_assistente, msgs, tools, 1400, 0.2, "required" if forcar else None)
+        resp, modelo = await asyncio.to_thread(S.chat_assistente, msgs, tools_chamada, 1400, 0.2, "required" if forcar else None)
         modelos = list(estado.get("modelos") or [])
         if modelo not in modelos:
             modelos.append(modelo)
@@ -434,6 +453,12 @@ def guardrail_saida(estado: Estado) -> dict:
     texto, achados = G.mascarar(texto)
     if achados:
         eventos.append(_evento(estado, "saida", "dados_sensiveis", "mascarado", ", ".join(achados), texto))
+    # 2b) ação inventada: diz que colocou na sacola mas a ferramenta não rodou (nada foi para a sacola de verdade)
+    if (RX_DIZ_QUE_ADICIONOU.search(texto) and "adicionar_a_sacola" not in (estado.get("usadas") or [])
+            and not estado.get("sacola_atual")):   # sacola vazia de verdade: a afirmação é falsa
+        eventos.append(_evento(estado, "saida", "acao_inventada", "corrigido", "disse que colocou na sacola sem a ferramenta", texto))
+        texto += ("\n\n_⚠️ Correção: ainda não coloquei nada na sua sacola. Peça \"coloca o <produto> na sacola\" ou use o "
+                  "botão **+ Sacola** do produto._")
     # 3) fundamentação: preço ou número de pedido sem nenhuma ferramenta consultada
     if not estado.get("usadas") and re.search(r"R\$\s?\d|\bP\d{7}\b", texto):
         eventos.append(_evento(estado, "saida", "sem_fundamentacao", "sinalizado", "valores citados sem consultar ferramentas", texto))
@@ -444,7 +469,7 @@ def guardrail_saida(estado: Estado) -> dict:
 # ───────────────────────────── trilha detalhada (o que cada nó decidiu) ─────────────────────────────
 ROTULOS = {"dados_sensiveis": "dados sensíveis", "vazamento_prompt": "vazamento do prompt", "sem_fundamentacao": "sem fundamentação",
            "fora_do_escopo": "fora do escopo", "outro_cliente": "dados de outra conta",
-           "unity_gateway": "service policy do Unity Gateway"}
+           "unity_gateway": "service policy do Unity Gateway", "acao_inventada": "ação não executada"}
 
 
 def _detalhe(no: str, antes: Estado, out: dict) -> str:
@@ -601,11 +626,12 @@ def _ordenar_produtos(produtos: dict, resposta: str) -> list[dict]:
 
 
 async def executar(mensagens: list[dict], imagem: str | None, cliente_id: str | None, token_usuario: str | None = None,
-                   conversa_id: str | None = None) -> dict:
+                   conversa_id: str | None = None, sacola_atual: list[str] | None = None) -> dict:
     async with Client(mcp) as cliente:
         tools = ferramentas_openai((await cliente.list_tools()).tools) + FERRAMENTAS_LOCAIS
         final = await GRAFO.ainvoke(
             {"mensagens": mensagens, "imagem": imagem, "cliente_id": cliente_id, "conversa_id": conversa_id,
+             "sacola_atual": sacola_atual,
              "eventos": [], "trilha": [], "passos": [], "usadas": []},
             config={"configurable": {"mcp": cliente, "ferramentas": tools, "token_usuario": token_usuario}, "recursion_limit": 40})
     agente = final.get("agente") if final.get("agente") in G.AGENTES else "vendas"

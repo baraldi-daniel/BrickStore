@@ -140,6 +140,7 @@ if SAC_OK:
     SELECT b.arquivo, b.duracao_seg, b.transcricao, 'whisper' AS fonte_transcricao, b.categoria, b.sentimento,
            nullif(b.pedido_id, '') AS pedido_id, b.produto, b.motivo,
            coalesce(p.cliente_id, b.cliente_ligacao) AS cliente_id, p.status AS status_pedido,
+           CAST(NULL AS STRING) AS protocolo,   -- preenchido quando a ligação é cadastrada no SAC pelo App
            current_timestamp() AS processado_em
     FROM b LEFT JOIN {fq('pedidos')} p ON p.pedido_id = b.pedido_id
     """)

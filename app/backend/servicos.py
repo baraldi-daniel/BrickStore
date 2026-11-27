@@ -31,6 +31,20 @@ SCHEMA = os.environ.get("NB_SCHEMA", "varejo")
 LLM = os.environ.get("NB_LLM", "databricks-llama-4-maverick")
 # Roteador do Unity Gateway (model service com routing + fallback + inference table) usado pelo Assistente
 LLM_CHAT = os.environ.get("NB_LLM_CHAT", "")
+# destinos do roteador (06_app): permitem ao admin chamar UM modelo direto, sem o roteador (e sem as service policies dele)
+DESTINOS_ROTEADOR = [m for m in os.environ.get("NB_ROTEADOR_DESTINOS", "").split(",") if m.strip()]
+MODELO_ASSISTENTE = {"atual": LLM_CHAT or LLM}   # 🛠️ o admin troca no Estúdio (vale até o App reiniciar)
+
+
+def opcoes_modelo() -> list[dict]:
+    ops = []
+    if LLM_CHAT:
+        ops.append({"id": LLM_CHAT, "nome": f"Roteador do Unity Gateway ({LLM_CHAT.split('.')[-1]}): 50/50 + fallback + service policies"})
+    for m in DESTINOS_ROTEADOR:
+        ops.append({"id": m, "nome": f"{m.split('.')[-1]} direto, pelo Unity Gateway (sem o roteador e sem as policies dele)"})
+    ops.append({"id": LLM, "nome": f"{LLM}: endpoint direto (sem Unity Gateway)"})
+    vistos = set()
+    return [o for o in ops if not (o["id"] in vistos or vistos.add(o["id"]))]
 EMBEDDING = os.environ.get("NB_EMBEDDING", "databricks-qwen3-embedding-0-6b")
 VS_ENDPOINT = os.environ.get("NB_VS_ENDPOINT", "brickstore_vs")
 GENIE_SPACE_ID = os.environ.get("NB_GENIE_SPACE_ID", "")
@@ -196,21 +210,24 @@ def chat_assistente(messages, tools=None, max_tokens=1400, temperature=0.2, tool
 
     O gateway escolhe o destino (50% Llama 4 Maverick / 50% Qwen3-Next) e cai no fallback (GPT OSS 120B) se
     algo falhar. Se o roteador não estiver configurado ou falhar, usa o LLM direto. Devolve (resposta, modelo)."""
-    if LLM_CHAT:
+    modelo = MODELO_ASSISTENTE["atual"]
+    if "." in modelo:   # nome do Unity Catalog (roteador <catalog>.<schema>.assistente_llm ou system.ai.*): API unificada
         try:
             from openai import OpenAI
             w = ws()
             token = w.config.authenticate()["Authorization"].split(" ", 1)[1]
             cli = OpenAI(api_key=token, base_url=f"{w.config.host.rstrip('/')}/ai-gateway/mlflow/v1")
-            kw = dict(model=LLM_CHAT, messages=messages, max_tokens=max_tokens, temperature=temperature)
+            kw = dict(model=modelo, messages=messages, max_tokens=max_tokens, temperature=temperature)
             if tools:
                 kw["tools"] = tools
                 if tool_choice:
                     kw["tool_choice"] = tool_choice
             r = cli.chat.completions.create(**kw)
-            return r, f"{getattr(r, 'model', '') or 'roteador'} (via {LLM_CHAT.split('.')[-1]})"
+            if modelo == LLM_CHAT:
+                return r, f"{getattr(r, 'model', '') or 'roteador'} (via {LLM_CHAT.split('.')[-1]})"
+            return r, f"{modelo.split('.')[-1]} (direto, sem roteador)"
         except Exception as e:
-            log.warning("roteador %s falhou (%s); usando %s direto", LLM_CHAT, str(e)[:120], LLM)
+            log.warning("modelo %s falhou (%s); usando %s direto", modelo, str(e)[:120], LLM)
     return chat(messages, tools, max_tokens, temperature, tool_choice=tool_choice), LLM
 
 
