@@ -36,13 +36,19 @@ DESTINOS_ROTEADOR = [m for m in os.environ.get("NB_ROTEADOR_DESTINOS", "").split
 MODELO_ASSISTENTE = {"atual": LLM_CHAT or LLM}   # 🛠️ o admin troca no Estúdio (vale até o App reiniciar)
 
 
+def _nome_curto(m: str) -> str:
+    """system.ai.llama-4-maverick → Llama 4 Maverick"""
+    n = m.split(".")[-1].replace("databricks-", "")
+    return " ".join(p.upper() if p in ("gpt", "oss") else p.capitalize() for p in n.replace("_", "-").split("-"))
+
+
 def opcoes_modelo() -> list[dict]:
     ops = []
     if LLM_CHAT:
-        ops.append({"id": LLM_CHAT, "nome": f"Roteador do Unity Gateway ({LLM_CHAT.split('.')[-1]}): 50/50 + fallback + service policies"})
+        ops.append({"id": LLM_CHAT, "nome": f"Roteador {LLM_CHAT.split('.')[-1]} (50/50 + fallback + policies)"})
     for m in DESTINOS_ROTEADOR:
-        ops.append({"id": m, "nome": f"{m.split('.')[-1]} direto, pelo Unity Gateway (sem o roteador e sem as policies dele)"})
-    ops.append({"id": LLM, "nome": f"{LLM}: endpoint direto (sem Unity Gateway)"})
+        ops.append({"id": m, "nome": f"{_nome_curto(m)} direto (sem roteador)"})
+    ops.append({"id": LLM, "nome": f"{_nome_curto(LLM)} pelo endpoint (sem Unity Gateway)"})
     vistos = set()
     return [o for o in ops if not (o["id"] in vistos or vistos.add(o["id"]))]
 EMBEDDING = os.environ.get("NB_EMBEDDING", "databricks-qwen3-embedding-0-6b")

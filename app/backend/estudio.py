@@ -330,6 +330,7 @@ def modelo_ml() -> dict:
 
 def recalcular_recomendacoes() -> dict:
     t0 = time.time()
-    S.sql(sql_regras(S.CATALOG, S.SCHEMA), timeout_s=600)
+    from .lakebase import tabela   # views Delta + Lakebase: as compras feitas no App entram nas regras
+    S.sql(sql_regras(S.CATALOG, S.SCHEMA, pedidos=tabela("pedidos"), itens=tabela("itens_pedido")), timeout_s=600)
     CATALOGO.carregar()
     return {"segundos": round(time.time() - t0, 1), "regras": sum(len(v) for v in CATALOGO.regras.values())}

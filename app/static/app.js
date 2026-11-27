@@ -617,8 +617,9 @@ function pedidoHTML(p) {
     <div class="pedido-itens">${(p.itens || []).map(i => `<div class="pi">${fotoMini(i)}<div><b>${escHTML(i.nome)}</b>
       <span>Qtd. ${i.quantidade} · ${reais(precoVigente(i))}</span></div></div>`).join("")}</div>
     ${p.previsao_entrega && p.status === "Em transporte" ? `<div class="pedido-entrega"><span>🚚 Previsão de entrega: <b>${escHTML(dataEntrega(p.previsao_entrega))}</b></span>${botaoAgenda(p.pedido_id)}</div>` : ""}
-    ${(p.solicitacoes || []).map(sl => `<div class="pedido-sac">🧾 <b>${escHTML(sl.tipo || "")}</b> · protocolo <span class="mono">${escHTML(sl.protocolo)}</span>
-      · ${escHTML(sl.status || "")} · ${escHTML(sl.prazo || "")}<small>${escHTML(sl.motivo || "")}</small></div>`).join("")}
+    ${(p.solicitacoes || []).map(sl => `<div class="pedido-sac"><div class="sac-linha">🧾 <b>${escHTML(sl.tipo || "")}</b> · protocolo
+      <span class="mono">${escHTML(sl.protocolo)}</span> · ${escHTML(sl.status || "")} · ${escHTML(sl.prazo || "")}</div>
+      <small>${escHTML(sl.motivo || "")}</small></div>`).join("")}
     <footer><span>Total do pedido</span><b>${reais(p.valor_total)}</b></footer></article>`;
 }
 async function paginaPedidos(_a, _q, tok) {
@@ -633,7 +634,7 @@ async function paginaPedidos(_a, _q, tok) {
   const peds = d.pedidos || [];
   reg(peds.flatMap(p => p.itens || []));
   montar(tok, cabecalhoPagina({ kicker: "Minha conta", titulo: "Meus pedidos", sub: `${numPT(peds.length)} pedido(s) de ${E.perfil.apelido}` })
-    + `<div class="container">${peds.length ? peds.map(pedidoHTML).join("")
+    + `<div class="container pedidos-lista">${peds.length ? peds.map(pedidoHTML).join("")
       : `<div class="vazio-grande"><b>Nenhum pedido ainda</b><span>Quando você finalizar uma compra, ela aparece aqui.</span><a class="btn btn-lava" href="#/inicio">Ver ofertas</a></div>`}</div>${rodapeHTML()}`);
 }
 
@@ -715,7 +716,7 @@ async function investigar(arquivo) {
 }
 
 /* ───────────── Estúdio (controle da loja) ───────────── */
-const ESTUDIO_ABAS = [["painel", "Painel"], ["novo", "+ Novo produto (PDF)"], ["produtos", "Produtos"], ["previsao", "📈 Previsão"], ["ajuda", "Central de ajuda"], ["mcp", "MCP"]];
+const ESTUDIO_ABAS = [["painel", "Painel"], ["novo", "+ Novo produto (PDF)"], ["produtos", "Produtos"], ["previsao", "📈 Previsão"], ["modelo", "🧠 Modelo"], ["conversas", "💬 Conversas"], ["ajuda", "Central de ajuda"], ["mcp", "MCP"]];
 const aba = (tok, html) => { if (tok === E.tok) { const el = $("#aba"); if (el) el.innerHTML = html; } };
 function paginaEstudio([sub = "painel"], _q, tok) {
   if (!E.admin) {
@@ -733,8 +734,61 @@ function paginaEstudio([sub = "painel"], _q, tok) {
     E.sacVoz = false;
     api("/api/voz/disponivel").then(r => { if (r.disponivel) { E.sacVoz = true; if (tok === E.tok) paginaEstudio([sub], _q, tok); } }).catch(() => { });
   }
-  const fn = { painel: abaPainel, novo: abaNovo, produtos: abaProdutos, previsao: abaPrevisao, voz: abaVoz, ajuda: abaAjuda, mcp: abaMcp }[sub] || abaPainel;
+  const fn = { painel: abaPainel, novo: abaNovo, produtos: abaProdutos, previsao: abaPrevisao, modelo: abaModelo, conversas: abaConversas, voz: abaVoz, ajuda: abaAjuda, mcp: abaMcp }[sub] || abaPainel;
   fn(tok);
+}
+/* ── 🧠 Modelo do Assistente (admin): roteador do Unity Gateway × modelo direto ── */
+async function abaModelo(tok) {
+  aba(tok, carregandoHTML());
+  let mod;
+  try { mod = await api("/api/admin/modelo"); } catch (e) { aba(tok, `<div class="painel painel-erro"><b>Modelo indisponível</b><span>${escHTML(e.message)}</span></div>`); return; }
+  const atual = mod.opcoes.find(o => o.id === mod.atual) || { nome: mod.atual };
+  aba(tok, `<section class="painel painel-modelo">
+    <h3>🧠 Modelo do Assistente</h3>
+    <p class="assoc-legenda">Escolha qual modelo responde no Assistente <b>agora</b> (vale para todos, até o App reiniciar).</p>
+    <div class="modelo-atual">Em uso: <b>${escHTML(atual.nome)}</b><br><code>${escHTML(mod.atual)}</code></div>
+    <div class="modelo-opcoes">${mod.opcoes.map(o => `<label class="modelo-op ${o.id === mod.atual ? "sel" : ""}">
+      <input type="radio" name="modelo" value="${escHTML(o.id)}" ${o.id === mod.atual ? "checked" : ""}>
+      <span><b>${escHTML(o.nome)}</b><code>${escHTML(o.id)}</code></span></label>`).join("")}</div>
+    <div class="botoes"><button class="btn btn-lava" id="trocar-modelo">Usar este modelo</button></div>
+    <table class="tabela-ml modelo-tab"><thead><tr><th></th><th>Roteador (<code>assistente_llm</code>)</th><th>Modelo direto</th></tr></thead><tbody>
+      <tr><td>Balanço 50/50 (selo 🔀 alterna)</td><td>✅</td><td>—</td></tr>
+      <tr><td>Fallback se o modelo falhar</td><td>✅</td><td>—</td></tr>
+      <tr><td>Inference table (<code>assistente_llm_payload</code>)</td><td>✅</td><td>—</td></tr>
+      <tr><td>Service policies do Unity Gateway (selo 🛡️ Unity Gateway)</td><td>✅</td><td>—</td></tr>
+      <tr><td>Guardrails do grafo do App (dados sensíveis, jailbreak, juiz)</td><td>✅</td><td>✅</td></tr>
+    </tbody></table>
+    <p class="assoc-legenda">Teste: troque o modelo e pergunte no Assistente <i>"Qual modelo é você?"</i> e <i>"A loja X vende mais barato?"</i>; compare os selos 🔀 e 🛡️.</p>
+  </section>`);
+  $$("input[name=modelo]").forEach(r => r.onchange = () => $$(".modelo-op").forEach(l => l.classList.toggle("sel", l.contains(r) && r.checked)));
+  $("#trocar-modelo").onclick = async () => {
+    const id = ($("input[name=modelo]:checked") || {}).value; if (!id) return;
+    try { const r = await api("/api/admin/modelo", { json: { id } });
+          toast(`<div class="toast-txt"><b>Assistente agora usa</b><span>${escHTML(r.atual)}</span></div>`, 3500); abaModelo(tok); }
+    catch (e) { toastErro(e); }
+  };
+}
+/* ── 💬 Conversas (admin): todas as perguntas do Assistente, de todos os clientes ── */
+async function abaConversas(tok) {
+  aba(tok, carregandoHTML());
+  let d;
+  try { d = await api("/api/admin/conversas"); } catch (e) { aba(tok, `<div class="painel painel-erro"><b>Conversas indisponíveis</b><span>${escHTML(e.message)}</span></div>`); return; }
+  if (!d.ativa) { aba(tok, `<div class="painel"><b>Sem Lakebase</b><p class="assoc-legenda">As conversas ficam na tabela <code>loja.conversas</code> do Lakebase; sem ele, nada é gravado.</p></div>`); return; }
+  const msgs = d.mensagens || [];
+  const quando = t => new Date(t).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const nBloq = msgs.filter(m => m.papel === "user" && m.agente === "bloqueado").length;
+  aba(tok, `<section class="painel conversas-admin">
+    <h3>💬 Todas as perguntas do Assistente · todos os clientes</h3>
+    <p class="assoc-legenda">${numPT(msgs.filter(m => m.papel === "user").length)} perguntas recentes, ${numPT(nBloq)} bloqueadas pelos guardrails (em vermelho; não entram na memória do cliente).
+      Fonte: <code>loja.conversas</code> no Lakebase, também lida no Lakehouse pelo catálogo registrado.</p>
+    <button class="btn btn-borda btn-sm" id="conv-atualizar">↻ Atualizar</button>
+    <table class="tabela-ml conv-tab"><thead><tr><th>Quando</th><th>Cliente</th><th></th><th>Mensagem</th><th>Agente</th><th>Modelo</th></tr></thead>
+    <tbody>${msgs.map(m => `<tr class="${m.agente === "bloqueado" ? "bloq" : ""} ${m.papel}">
+      <td class="mono">${escHTML(quando(m.criado_em))}</td><td>${escHTML(m.cliente_nome || m.cliente_id || "")}</td>
+      <td>${m.papel === "user" ? "🙋" : "🤖"}</td><td>${escHTML(String(m.conteudo || "").slice(0, 260))}</td>
+      <td>${m.agente === "bloqueado" ? "🛡️ bloqueado" : escHTML(m.agente || "")}</td><td class="mono">${escHTML(m.modelo || "")}</td></tr>`).join("")
+      || `<tr><td colspan="6">Nenhuma conversa ainda.</td></tr>`}</tbody></table></section>`);
+  const b = $("#conv-atualizar"); if (b) b.onclick = () => abaConversas(tok);
 }
 /* ── 📞 SAC por voz (Whisper no Model Serving + ai_classify / ai_analyze_sentiment / ai_extract) ── */
 async function gravacaoParaWav(blob) {
@@ -753,7 +807,7 @@ async function gravacaoParaWav(blob) {
   return new Blob([dv], { type: "audio/wav" });
 }
 function vozResultado(r) {
-  return `<table class="tabela-ml voz-tab">${VOZ_CAB}<tbody>${vozLinhaHTML(r)}</tbody></table>`;
+  return `<h4>Resultado</h4><table class="tabela-ml voz-tab">${VOZ_CAB}<tbody>${vozLinhaHTML(r)}</tbody></table>`;
 }
 async function vozEnviar(arquivo, origem, destino) {
   destino.innerHTML = `<div class="painel"><span class="spin"></span> Transcrevendo com o Whisper e analisando…</div>`;
@@ -764,11 +818,10 @@ async function vozEnviar(arquivo, origem, destino) {
 }
 async function abaVoz(tok) {
   aba(tok, carregandoHTML());
-  let d, ex;
-  let sols = { solicitacoes: [] };
-  try { [d, ex, sols] = await Promise.all([api("/api/voz/atendimentos"), api("/api/voz/exemplos"), api("/api/admin/solicitacoes").catch(() => sols)]); }
+  let d, sols = { solicitacoes: [] };
+  try { [d, sols] = await Promise.all([api("/api/voz/atendimentos"), api("/api/admin/solicitacoes").catch(() => sols)]); }
   catch (e) { aba(tok, `<div class="painel painel-erro"><b>SAC por voz indisponível</b><span>${escHTML(e.message)}</span></div>`); return; }
-  const linhas = d.atendimentos || [], exemplos = ex.exemplos || [];
+  const linhas = d.atendimentos || [];
   const podeGravar = !!(navigator.mediaDevices && window.MediaRecorder);
   aba(tok, `<section class="painel voz">
     <h3>SAC por voz com <b>Whisper</b></h3>
@@ -781,15 +834,11 @@ async function abaVoz(tok) {
         <div id="voz-gravado"></div></div>
       <div class="voz-bloco"><h4>📁 Enviar um arquivo</h4>
         <form id="voz-form" class="fc-form"><label class="drop">Escolher áudio (.wav / .mp3)<input type="file" name="audio" accept="audio/*" hidden></label>
-          <button class="btn btn-borda" type="submit">Transcrever e analisar</button></form>
-        <div id="voz-res"></div></div>
+          <button class="btn btn-borda" type="submit">Transcrever e analisar</button></form></div>
     </div>
-    <h4>📞 Ligações prontas</h4>
-    <p class="assoc-legenda">Seis ligações gravadas antes, já transcritas na instalação. Clique em <b>Transcrever agora</b> para rodar o Whisper ao vivo.</p>
-    <div class="voz-exemplos">${exemplos.map(x => `<div class="voz-ex"><audio controls preload="none" src="${escHTML(x.audio_url || "")}"></audio>
-      <small class="mono">${escHTML(x.arquivo)}</small><button class="btn btn-sm btn-borda" data-voz-exemplo="${escHTML(x.arquivo)}">Transcrever agora</button>
-      <div class="voz-ex-res"></div></div>`).join("")}</div>
+    <div id="voz-resultado"></div>
     <h4>Histórico (atendimentos_voz) · todos os clientes</h4>
+    <p class="assoc-legenda">Inclui as 6 ligações gravadas antes e transcritas na instalação, e tudo o que for gravado ou enviado aqui.</p>
     <p class="assoc-legenda"><b>Cadastrar no SAC</b> abre a solicitação ligada ao <b>pedido</b> (confira o número: o Whisper pode errar dígitos); ela aparece em <i>Meus pedidos</i> do cliente.</p>
     <table class="tabela-ml voz-tab">${VOZ_CAB}
     <tbody>${linhas.map(vozLinhaHTML).join("") || `<tr><td colspan="7">Nenhum atendimento processado ainda.</td></tr>`}</tbody></table>
@@ -805,14 +854,7 @@ async function abaVoz(tok) {
   }
   const f = $("#voz-form"); if (!f) return;
   f.audio.onchange = () => { f.querySelector(".drop").firstChild.textContent = f.audio.files[0]?.name || "Escolher áudio"; };
-  f.onsubmit = ev => { ev.preventDefault(); if (f.audio.files[0]) vozEnviar(f.audio.files[0], "arquivo", $("#voz-res")); };
-  $$("[data-voz-exemplo]").forEach(b => b.onclick = async () => {
-    const res = b.parentElement.querySelector(".voz-ex-res"); b.disabled = true;
-    res.innerHTML = `<span class="spin"></span> Whisper ao vivo…`;
-    try { res.innerHTML = vozResultado(await api("/api/voz/exemplo", { json: { arquivo: b.dataset.vozExemplo } })); }
-    catch (e) { res.innerHTML = `<span class="erro">${escHTML(e.message)}</span>`; }
-    b.disabled = false;
-  });
+  f.onsubmit = ev => { ev.preventDefault(); if (f.audio.files[0]) vozEnviar(f.audio.files[0], "arquivo", $("#voz-resultado")); };
   const bg = $("#voz-gravar"); if (!bg) return;
   let rec = null, partes = [], t0 = 0, relogio = null;
   bg.onclick = async () => {
@@ -828,8 +870,9 @@ async function abaVoz(tok) {
       const destino = $("#voz-gravado");
       try {
         const wav = await gravacaoParaWav(new Blob(partes, { type: rec.mimeType || "audio/webm" }));
-        destino.innerHTML = `<audio controls src="${URL.createObjectURL(wav)}"></audio><div id="voz-gravado-res"></div>`;
-        await vozEnviar(new File([wav], "gravacao.wav", { type: "audio/wav" }), "microfone", $("#voz-gravado-res"));
+        destino.innerHTML = `<audio controls src="${URL.createObjectURL(wav)}"></audio>`;
+        // o resultado (tabela larga) vai para a área de largura inteira, abaixo dos dois blocos
+        await vozEnviar(new File([wav], "gravacao.wav", { type: "audio/wav" }), "microfone", $("#voz-resultado"));
       } catch (e) { destino.innerHTML = `<div class="painel painel-erro"><b>Não consegui converter o áudio</b><span>${escHTML(e.message)}</span></div>`; }
     };
     rec.start(); t0 = Date.now(); bg.textContent = "■ Parar"; bg.classList.add("gravando");
@@ -973,27 +1016,12 @@ function painelMLHTML(m) {
 
 async function abaPainel(tok) {
   aba(tok, carregandoHTML());
-  const [s, ml, mod] = await Promise.all([api("/api/estudio/status"), api("/api/estudio/ml").catch(() => null),
-    api("/api/admin/modelo").catch(() => null)]);
+  const [s, ml] = await Promise.all([api("/api/estudio/status"), api("/api/estudio/ml").catch(() => null)]);
   if (tok !== E.tok) return;
   const c = s.contagens || s.contadores || {};
   const kpi = (n, v) => `<div class="kpi"><small>${n}</small><b>${v == null ? "—" : numPT(v)}</b></div>`;
   const indices = s.indices || [], config = s.config || {};
-  // 🛠️ admin: modelo do Assistente (roteador do Unity Gateway, com as service policies × modelo direto, sem elas)
-  const modeloHTML = mod ? `<section class="painel painel-modelo"><h3>🧠 Modelo do Assistente</h3>
-      <p class="assoc-legenda">Com o <b>roteador</b> (<code>assistente_llm</code>) valem o 50/50, o fallback, a inference table e as
-      <b>service policies</b>. Num modelo <b>direto</b> nada disso vale: compare a mesma pergunta nos dois e veja o selo 🔀 e o 🛡️ no chat.</p>
-      <div class="botoes"><select id="modelo-assistente">${mod.opcoes.map(o => `<option value="${escHTML(o.id)}" ${o.id === mod.atual ? "selected" : ""}>${escHTML(o.nome)}</option>`).join("")}</select>
-      <button class="btn btn-lava" id="trocar-modelo">Usar este modelo</button></div></section>` : "";
-  setTimeout(() => {
-    const b = $("#trocar-modelo"); if (!b) return;
-    b.onclick = async () => {
-      try { const r = await api("/api/admin/modelo", { json: { id: $("#modelo-assistente").value } });
-            toast(`<div class="toast-txt"><b>Assistente agora usa</b><span>${escHTML(r.atual)}</span></div>`, 3500); }
-      catch (e) { toastErro(e); }
-    };
-  }, 0);
-  aba(tok, `${modeloHTML}<div class="kpis">${kpi("Produtos", c.produtos)}${kpi("Do Estúdio", c.produtos_estudio ?? c.produtos_do_estudio)}${kpi("Clientes", c.clientes)}
+  aba(tok, `<div class="kpis">${kpi("Produtos", c.produtos)}${kpi("Do Estúdio", c.produtos_estudio ?? c.produtos_do_estudio)}${kpi("Clientes", c.clientes)}
       ${kpi("Pedidos", c.pedidos)}${kpi("Regras de associação", c.regras ?? c.associacoes)}${kpi("Trechos de ajuda", c.chunks)}</div>
     <div class="duas">
       <section class="painel"><h3>Índices de busca (Vector Search)</h3>
@@ -1254,7 +1282,8 @@ function trilhaHTML(passos) {
 function addMsg(papel, texto, extra = {}) {
   const box = $("#chat-msgs"), div = document.createElement("div");
   div.className = "msg " + papel;
-  if (papel === "user") div.innerHTML = (extra.img ? `<img class="anexo" src="${extra.img}" alt="">` : "") + (texto ? `<p>${escHTML(texto)}</p>` : "");
+  if (papel === "user") div.innerHTML = (extra.img ? `<img class="anexo" src="${extra.img}" alt="">` : "")
+    + (texto ? `<p>${escHTML(texto)}</p>` : "");
   else {
     let h = md(texto);
     if (extra.laudo && (extra.laudo.cores_hex || []).length) h += `<div class="paleta">${extra.laudo.cores_hex.map(c => `<i style="background:${hexOK(c)}"></i>`).join("")}</div>`;
@@ -1338,14 +1367,8 @@ $("#chat-arquivo").onchange = async e => {
   } catch (err) { prev.innerHTML = `<span>Falha no envio: ${escHTML(err.message)}</span>`; E.anexo = null; }
   e.target.value = "";
 };
-$("#chat-form").onsubmit = async e => {
-  e.preventDefault();
-  const inp = $("#chat-input"), texto = inp.value.trim();
-  if (!texto && !E.anexo) return;
-  const anexo = E.anexo; E.anexo = null; $("#anexo-preview").classList.add("oculto"); inp.value = "";
-  $("#chat-sugestoes").innerHTML = "";
-  const msg = texto || "Tem algo parecido com este produto?";
-  addMsg("user", msg, { img: anexo && anexo.url });
+// envia uma pergunta ao Assistente (o balão do cliente já pode existir: pergunta falada)
+async function enviarAoAssistente(msg, { anexo = null } = {}) {
   E.chat.push({ role: "user", content: msg });
   const pensando = addMsg("bot", ""); pensando.innerHTML = `<div class="digitando"><span></span><span></span><span></span></div>`;
   try {
@@ -1362,27 +1385,53 @@ $("#chat-form").onsubmit = async e => {
     (r.sacola || []).forEach((p, k) => addCarrinho(p, { qtd: p.quantidade || 1, aviso: k === (r.sacola.length - 1) }));
     if (r.memoria && r.memoria.gravado) E.memoriaTotal = (E.memoriaTotal || 0) + 2;
   } catch (err) { pensando.remove(); addMsg("bot", "Não consegui responder agora: " + err.message); }
+}
+$("#chat-form").onsubmit = async e => {
+  e.preventDefault();
+  const inp = $("#chat-input"), texto = inp.value.trim();
+  if (!texto && !E.anexo) return;
+  const anexo = E.anexo; E.anexo = null; $("#anexo-preview").classList.add("oculto"); inp.value = "";
+  $("#chat-sugestoes").innerHTML = "";
+  const msg = texto || "Tem algo parecido com este produto?";
+  addMsg("user", msg, { img: anexo && anexo.url });
+  await enviarAoAssistente(msg, { anexo });
 };
+// 🎙️ pergunta falada: balão "gravando" com tempo → balão com o áudio + "transcrevendo" → texto do Whisper → Assistente
 (() => {
   const bt = $("#chat-mic"); if (!bt) return;
-  let rec = null, partes = [];
+  let rec = null, partes = [], relogio = null, bolha = null;
+  const caixa = () => { const c = $("#chat-msgs"); c.scrollTop = c.scrollHeight; };
   bt.onclick = async () => {
     if (rec && rec.state === "recording") { rec.stop(); return; }
     let stream;
     try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
     catch { toastErro(new Error("Sem acesso ao microfone: permita o microfone para este site.")); return; }
+    $("#chat-sugestoes").innerHTML = "";
     partes = []; rec = new MediaRecorder(stream);
     rec.ondataavailable = e => e.data.size && partes.push(e.data);
+    bolha = addMsg("user", "");
+    const t0 = Date.now();
+    const tick = () => { const sgs = Math.round((Date.now() - t0) / 1000);
+      bolha.innerHTML = `<p class="gravando-txt"><span class="ponto-rec"></span> Gravando… ${sgs}s<small>clique no 🎙️ de novo para parar (máx. 30 s)</small></p>`; };
+    tick(); relogio = setInterval(tick, 500);
     rec.onstop = async () => {
-      stream.getTracks().forEach(t => t.stop()); bt.classList.remove("gravando");
-      const inp = $("#chat-input"); inp.placeholder = "Transcrevendo com o Whisper…"; inp.disabled = true;
+      clearInterval(relogio); stream.getTracks().forEach(t => t.stop()); bt.classList.remove("gravando"); bt.disabled = true;
       try {
         const wav = await gravacaoParaWav(new Blob(partes, { type: rec.mimeType || "audio/webm" }));
+        const url = URL.createObjectURL(wav);
+        bolha.innerHTML = `<audio class="audio-msg" controls src="${url}"></audio>
+          <small class="transcricao"><span class="spin"></span> transcrevendo com o Whisper… (na primeira vez o endpoint pode levar alguns minutos para acordar)</small>`;
+        caixa();
         const fd = new FormData(); fd.append("audio", new File([wav], "pergunta.wav", { type: "audio/wav" }));
         const r = await apiForm("/api/voz/transcrever", fd);
-        inp.disabled = false; inp.value = r.texto; $("#chat-form").requestSubmit();
-      } catch (e) { inp.disabled = false; toastErro(e); }
-      inp.placeholder = "Pergunte ou peça uma recomendação…";
+        bolha.innerHTML = `<audio class="audio-msg" controls src="${url}"></audio><small class="transcricao">🎙️ transcrito pelo Whisper</small><p>${escHTML(r.texto)}</p>`;
+        caixa(); bt.disabled = false;
+        await enviarAoAssistente(r.texto);
+      } catch (e) {
+        bolha.querySelector(".transcricao") ? bolha.querySelector(".transcricao").innerHTML = `⚠️ não consegui transcrever: ${escHTML(e.message)}`
+          : (bolha.innerHTML = `<p>⚠️ não consegui gravar: ${escHTML(e.message)}</p>`);
+        bt.disabled = false;
+      }
     };
     rec.start(); bt.classList.add("gravando");
     setTimeout(() => rec && rec.state === "recording" && rec.stop(), 30000);   // no máximo 30 s

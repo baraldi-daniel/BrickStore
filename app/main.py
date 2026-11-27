@@ -256,6 +256,16 @@ def _processar_audio(caminho: str, cliente_id: str | None, fonte: str, registrar
     if not texto:
         raise HTTPException(422, "O Whisper não devolveu texto" + (f" ({tr.get('erro')})" if (tr or {}).get("erro") else "") + ".")
     analise = voz.analisar_atendimento(texto) or {}
+    if analise.get("pedido_id"):   # quem ligou = dono do pedido citado (se o pedido existir)
+        try:
+            dono = S.sql(f"""SELECT p.cliente_id, c.nome FROM {lakebase.tabela('pedidos')} p
+                             LEFT JOIN {S.fq('clientes')} c USING (cliente_id) WHERE p.pedido_id = :p LIMIT 1""",
+                         {"p": analise["pedido_id"]})
+            if dono:
+                cliente_id = cliente_id or dono[0]["cliente_id"]
+                analise["cliente_nome"] = dono[0]["nome"]
+        except Exception as e:
+            log.warning("SAC por voz: não achei o dono do pedido (%s)", str(e)[:120])
     if registrar:
         try:
             voz.registrar(caminho, texto, tr.get("duracao_seg"), analise, cliente_id, fonte)
@@ -282,21 +292,6 @@ async def voz_novo(audio: UploadFile = File(...), cliente_id: str | None = Form(
     await asyncio.to_thread(S.upload, caminho, dados)
     fonte = "whisper · gravado no App" if origem == "microfone" else "whisper · enviado no App"
     return await asyncio.to_thread(_processar_audio, caminho, cliente_id, fonte)
-
-
-RX_EXEMPLO_VOZ = re.compile(r"^sac_\d{2}_[a-z_]+\.mp3$")
-
-
-@app.get("/api/voz/exemplos")
-def voz_exemplos():
-    """As ligações prontas do repositório (audios_sac/), já copiadas para o Volume pela etapa 05a."""
-    from backend import voz
-    try:
-        nomes = voz.exemplos()
-    except Exception as e:
-        log.warning("SAC por voz: não listei as ligações prontas (%s)", str(e)[:120])
-        nomes = []
-    return {"exemplos": [{"arquivo": n, "audio_url": _audio_url(n)} for n in nomes]}
 
 
 @app.post("/api/voz/transcrever")
@@ -356,6 +351,16 @@ def admin_trocar_modelo(id: str = Body(..., embed=True)):
     return {"atual": id}
 
 
+@app.get("/api/admin/conversas")
+def admin_conversas():
+    """Modo admin: TODAS as perguntas e respostas do Assistente, de todos os clientes (loja.conversas no Lakebase)."""
+    if not memoria.ativa():
+        return {"ativa": False, "mensagens": []}
+    nomes = {p["cliente_id"]: p.get("nome") or p.get("apelido") for p in CATALOGO.perfis}
+    msgs = memoria.todas()
+    return {"ativa": True, "mensagens": [{**m, "cliente_nome": nomes.get(m["cliente_id"], m["cliente_id"])} for m in msgs]}
+
+
 @app.get("/api/admin/solicitacoes")
 def admin_solicitacoes():
     """Modo admin: as solicitações mais recentes do SAC, de TODOS os clientes."""
@@ -364,14 +369,6 @@ def admin_solicitacoes():
                                       FROM {lakebase.tabela('solicitacoes_atendimento')} s
                                       LEFT JOIN {S.fq('clientes')} c USING (cliente_id)
                                       ORDER BY s.aberto_em DESC LIMIT 30""")}
-
-
-@app.post("/api/voz/exemplo")
-async def voz_exemplo(arquivo: str = Body(..., embed=True)):
-    """Roda o Whisper AO VIVO numa ligação pronta (sem gravar de novo na tabela: ela já está lá)."""
-    if not RX_EXEMPLO_VOZ.match(arquivo or ""):
-        raise HTTPException(400, "ligação de exemplo inválida")
-    return await asyncio.to_thread(_processar_audio, f"{S.VOL_MIDIA}/audios_sac/{arquivo}", None, "whisper · ao vivo", False)
 
 
 # ───────────────────────────── Previsão de vendas (ai_forecast) ─────────────────────────────

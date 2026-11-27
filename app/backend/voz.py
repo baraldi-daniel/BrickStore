@@ -12,6 +12,7 @@ import json
 import os
 import re
 
+from . import lakebase
 from . import servicos as S
 
 CATEGORIAS = json.dumps({
@@ -103,17 +104,11 @@ def atendimentos(cliente_id: str | None = None, limite: int = 50) -> list[dict]:
                  {"c": cliente_id} if cliente_id else None)
 
 
-def exemplos() -> list[str]:
-    """As ligações prontas que a etapa 05a copiou para o Volume (midia/audios_sac/sac_*.mp3)."""
-    itens = S.ws().files.list_directory_contents(f"{S.VOL_MIDIA}/audios_sac")
-    return sorted(i.name for i in itens if re.fullmatch(r"sac_\d{2}_[a-z_]+\.mp3", i.name or ""))
-
-
 def vincular(arquivo: str, protocolo: str, pedido_id: str, cliente_id: str) -> None:
     """Grava na ligação o protocolo aberto no SAC e o pedido/cliente corrigidos (se o Whisper errou o número)."""
     _garantir_protocolo()
     S.sql(f"""UPDATE {S.fq('atendimentos_voz')} SET protocolo = :pr, pedido_id = :p, cliente_id = :c,
-                     status_pedido = (SELECT status FROM {S.fq('pedidos')} WHERE pedido_id = :p)
+                     status_pedido = (SELECT status FROM {lakebase.tabela('pedidos')} WHERE pedido_id = :p)
               WHERE arquivo = :a OR arquivo = regexp_extract(:a, '[^/]+$', 0)""",   # ligações prontas: só o nome do arquivo
           {"pr": protocolo, "p": pedido_id, "c": cliente_id, "a": arquivo})
 
@@ -124,8 +119,8 @@ def registrar(arquivo: str, transcricao: str, duracao_seg, analise: dict, client
     S.sql(f"""INSERT INTO {S.fq('atendimentos_voz')} (arquivo, duracao_seg, transcricao, fonte_transcricao, categoria, sentimento,
                                                      pedido_id, produto, motivo, cliente_id, status_pedido, processado_em)
               SELECT :arq, CAST(:dur AS DOUBLE), :txt, :fonte, :cat, :sent, :ped, :prod, :mot,
-                     coalesce((SELECT cliente_id FROM {S.fq('pedidos')} WHERE pedido_id = :ped), :cli),
-                     (SELECT status FROM {S.fq('pedidos')} WHERE pedido_id = :ped), current_timestamp()""",
+                     coalesce((SELECT cliente_id FROM {lakebase.tabela('pedidos')} WHERE pedido_id = :ped), :cli),
+                     (SELECT status FROM {lakebase.tabela('pedidos')} WHERE pedido_id = :ped), current_timestamp()""",
           {"arq": arquivo, "dur": None if duracao_seg is None else str(duracao_seg), "txt": transcricao[:8000], "fonte": fonte,
            "cat": analise.get("categoria"), "sent": analise.get("sentimento"), "ped": analise.get("pedido_id"),
            "prod": analise.get("produto"), "mot": analise.get("motivo"), "cli": cliente_id})

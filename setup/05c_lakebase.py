@@ -156,7 +156,8 @@ if PROJETO:   # sem Lakebase: célula pulada
           -- 🧠 memória do Assistente: cada turno do chat, por cliente e conversa (o App relê para lembrar do que foi perguntado)
           CREATE TABLE IF NOT EXISTS {SCHEMA_PG}.conversas (
             mensagem_id text PRIMARY KEY, conversa_id text NOT NULL, cliente_id text NOT NULL, papel text NOT NULL,
-            conteudo text NOT NULL, agente text, criado_em timestamptz NOT NULL DEFAULT now());
+            conteudo text NOT NULL, agente text, modelo text, criado_em timestamptz NOT NULL DEFAULT now());
+          ALTER TABLE {SCHEMA_PG}.conversas ADD COLUMN IF NOT EXISTS modelo text;
           CREATE INDEX IF NOT EXISTS ix_conversas_cliente ON {SCHEMA_PG}.conversas (cliente_id, criado_em DESC);
           CREATE INDEX IF NOT EXISTS ix_pedidos_cliente ON {SCHEMA_PG}.pedidos (cliente_id, data_pedido DESC);
           ALTER TABLE {SCHEMA_PG}.pedidos REPLICA IDENTITY FULL;

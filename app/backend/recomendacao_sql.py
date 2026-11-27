@@ -11,9 +11,11 @@ com 3 pedidos e lift enorme não ocupem o topo sobre complementos fortes com dez
 """
 
 
-def sql_regras(catalog: str, schema: str, min_juntos: int = 3, top_n: int = 20) -> str:
-    pedidos = f"{catalog}.{schema}.pedidos"
-    itens = f"{catalog}.{schema}.itens_pedido"
+def sql_regras(catalog: str, schema: str, min_juntos: int = 3, top_n: int = 20,
+               pedidos: str | None = None, itens: str | None = None) -> str:
+    # pedidos/itens: as tabelas Delta (instalação) ou as views Delta + Lakebase (App: inclui as compras feitas agora)
+    pedidos = pedidos or f"{catalog}.{schema}.pedidos"
+    itens = itens or f"{catalog}.{schema}.itens_pedido"
     produtos = f"{catalog}.{schema}.produtos"
     destino = f"{catalog}.{schema}.quem_comprou_tambem_comprou"
     return f"""

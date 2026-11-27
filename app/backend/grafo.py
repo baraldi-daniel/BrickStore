@@ -119,13 +119,18 @@ async def memoria_carregar(estado: Estado) -> dict:
 
 
 async def memoria_gravar(estado: Estado) -> dict:
-    cliente, conversa = estado.get("cliente_id"), estado.get("conversa_id")
+    # grava TODA pergunta (o admin vê no Estúdio → Conversas); as bloqueadas e as de visitante não viram memória de cliente
+    cliente, conversa = estado.get("cliente_id") or "visitante", estado.get("conversa_id")
     info = dict(estado.get("memoria_info") or {})
-    if cliente and conversa and M.ativa() and not estado.get("bloqueado"):
+    if conversa and M.ativa():
+        agente = M.BLOQUEADO if estado.get("bloqueado") else estado.get("agente")
+        modelo = ((estado.get("modelos") or [None])[-1] or None)
         try:
             await asyncio.to_thread(M.gravar, conversa, cliente,
-                                    [("user", _ultima(estado), None), ("assistant", estado.get("resposta") or "", estado.get("agente"))])
+                                    [("user", _ultima(estado), M.BLOQUEADO if estado.get("bloqueado") else None),
+                                     ("assistant", estado.get("resposta") or "", agente)], modelo)
             info["gravado"] = True
+            info["bloqueado"] = bool(estado.get("bloqueado"))
         except Exception as e:
             log.warning("memória: gravação falhou (%s)", str(e)[:160])
             info["gravado"], info["erro_gravar"] = False, str(e)[:160]
@@ -483,6 +488,8 @@ def _detalhe(no: str, antes: Estado, out: dict) -> str:
         return f"lembrou {i['mensagens']} mensagem(ns) de {i['conversas']} conversa(s) anterior(es) · Lakebase"
     if no == "memoria_gravar":
         i = out.get("memoria_info") or {}
+        if i.get("gravado") and i.get("bloqueado"):
+            return "turno bloqueado gravado para o admin (fora da memória do cliente)"
         if i.get("gravado"):
             return "turno gravado em loja.conversas (Lakebase)"
         if i.get("gravado") is False:
@@ -571,7 +578,7 @@ def montar_grafo():
     g.add_conditional_edges("ferramentas", rota_volta, {a: a for a in G.AGENTES})
     g.add_edge("guardrail_saida", "memoria_gravar")
     g.add_edge("memoria_gravar", END)
-    g.add_edge("bloqueio", END)
+    g.add_edge("bloqueio", "memoria_gravar")   # o admin vê as perguntas bloqueadas também
     return g.compile()
 
 

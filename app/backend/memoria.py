@@ -31,29 +31,55 @@ def _tab() -> str:
     return f"{lakebase.SCHEMA_PG}.conversas"
 
 
-def gravar(conversa_id: str, cliente_id: str, turnos: list[tuple[str, str, str | None]]) -> None:
-    """turnos = [(papel, conteudo, agente)] — em geral a pergunta do cliente e a resposta do assistente."""
-    lakebase.executar([(f"INSERT INTO {_tab()} (mensagem_id, conversa_id, cliente_id, papel, conteudo, agente, criado_em) "
-                        f"VALUES (%s, %s, %s, %s, %s, %s, clock_timestamp())",
-                        (uuid.uuid4().hex, conversa_id, cliente_id, papel, conteudo[:8000], agente))
-                       for papel, conteudo, agente in turnos if conteudo])
+BLOQUEADO = "bloqueado"   # turnos barrados pelos guardrails: o admin vê, mas não entram na memória do cliente
+
+
+def gravar(conversa_id: str, cliente_id: str, turnos: list[tuple[str, str, str | None]], modelo: str | None = None) -> None:
+    """turnos = [(papel, conteudo, agente)] — em geral a pergunta do cliente e a resposta do assistente.
+    `modelo` (quem respondeu) vai na coluna modelo; instalações antigas, sem a coluna, gravam sem ela."""
+    linhas = [(uuid.uuid4().hex, conversa_id, cliente_id, papel, conteudo[:8000], agente)
+              for papel, conteudo, agente in turnos if conteudo]
+    try:
+        lakebase.executar([(f"INSERT INTO {_tab()} (mensagem_id, conversa_id, cliente_id, papel, conteudo, agente, modelo, criado_em) "
+                            f"VALUES (%s, %s, %s, %s, %s, %s, %s, clock_timestamp())",
+                            (*l, modelo if l[3] == "assistant" else None)) for l in linhas])
+    except Exception as e:
+        if "modelo" not in str(e):
+            raise
+        lakebase.executar([(f"INSERT INTO {_tab()} (mensagem_id, conversa_id, cliente_id, papel, conteudo, agente, criado_em) "
+                            f"VALUES (%s, %s, %s, %s, %s, %s, clock_timestamp())", l) for l in linhas])
+
+
+def todas(limite: int = 80) -> list[dict]:
+    """Modo admin: as mensagens mais recentes de TODOS os clientes (inclusive as bloqueadas pelos guardrails)."""
+    try:
+        linhas = lakebase.consultar(f"""SELECT conversa_id, cliente_id, papel, conteudo, agente, modelo, criado_em FROM {_tab()}
+                                        ORDER BY criado_em DESC LIMIT %s""", (limite,))
+    except Exception as e:
+        if "modelo" not in str(e):
+            raise
+        linhas = lakebase.consultar(f"""SELECT conversa_id, cliente_id, papel, conteudo, agente, NULL AS modelo, criado_em
+                                        FROM {_tab()} ORDER BY criado_em DESC LIMIT %s""", (limite,))
+    return [{**l, "criado_em": l["criado_em"].isoformat()} for l in linhas]
 
 
 def anteriores(cliente_id: str, conversa_atual: str | None, limite: int = LIMITE_MEMORIA) -> list[dict]:
     """Últimas mensagens das OUTRAS conversas do cliente (a mais antiga primeiro)."""
     linhas = lakebase.consultar(
         f"""SELECT conversa_id, papel, conteudo, criado_em FROM {_tab()}
-            WHERE cliente_id = %s AND conversa_id <> %s ORDER BY criado_em DESC LIMIT %s""",
-        (cliente_id, conversa_atual or "", limite))
+            WHERE cliente_id = %s AND conversa_id <> %s AND coalesce(agente, '') <> %s ORDER BY criado_em DESC LIMIT %s""",
+        (cliente_id, conversa_atual or "", BLOQUEADO, limite))
     return list(reversed(linhas))
 
 
 def ultima_conversa(cliente_id: str) -> dict:
     """A conversa mais recente do cliente, para reabrir o chat onde parou."""
     linhas = lakebase.consultar(
-        f"""WITH ult AS (SELECT conversa_id FROM {_tab()} WHERE cliente_id = %s ORDER BY criado_em DESC LIMIT 1)
+        f"""WITH ult AS (SELECT conversa_id FROM {_tab()} WHERE cliente_id = %s AND coalesce(agente, '') <> %s
+                         ORDER BY criado_em DESC LIMIT 1)
             SELECT c.conversa_id, c.papel, c.conteudo, c.agente, c.criado_em FROM {_tab()} c JOIN ult USING (conversa_id)
-            WHERE c.cliente_id = %s ORDER BY c.criado_em""", (cliente_id, cliente_id))
+            WHERE c.cliente_id = %s AND coalesce(c.agente, '') <> %s ORDER BY c.criado_em""",
+        (cliente_id, BLOQUEADO, cliente_id, BLOQUEADO))
     resumo = lakebase.consultar(
         f"SELECT count(*) AS mensagens, count(DISTINCT conversa_id) AS conversas, min(criado_em) AS desde FROM {_tab()} WHERE cliente_id = %s",
         (cliente_id,))[0]
