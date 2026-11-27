@@ -61,8 +61,10 @@ Você roda **um único notebook** (`INSTALAR`) e ganha um e-commerce completo co
 | ![Assistente multiagente](docs/imagens/04_assistente.png) <br> **Assistente multiagente**: monta o setup gamer e coloca o monitor na sacola (selos 🔀 do roteador e 🧠 da memória) | ![Previsão com ai_forecast](docs/imagens/05_previsao.png) <br> **Previsão de vendas sob demanda** com `ai_forecast` |
 | ![Painel de ML](docs/imagens/06_estudio_ml.png) <br> **Estúdio**: placar do modelo de recomendação | ![Grafo LangGraph](docs/imagens/07_grafo_langgraph.png) <br> **Grafo LangGraph**: guardrails como nós |
 | ![Pergunta falada no Assistente](docs/imagens/08_voz_chat.png) <br> **🏢 Enterprise · Pergunta falada**: o 🎙️ grava, o **Whisper** transcreve e o áudio aparece no chat | ![Meus pedidos com protocolo do SAC](docs/imagens/09_pedidos_sac.png) <br> **Meus pedidos**: a troca aberta pelo Assistente aparece com protocolo no pedido |
-| ![Admin: pergunte aos dados](docs/imagens/12_admin_dados.png) <br> **Modo Admin · 📊 Dados**: pergunta ao **Genie** com gráfico e tabela; dados sensíveis revogados/liberados por **ABAC** (governed tag + column mask) | |
 | ![Admin: todas as conversas](docs/imagens/10_admin_conversas.png) <br> **Modo Admin · 💬 Conversas**: todas as perguntas, com agente e modelo; bloqueadas em vermelho (Lakebase) | ![SAC por voz](docs/imagens/11_sac_voz.png) <br> **🏢 Enterprise · SAC por voz**: Whisper + `ai_classify` / `ai_extract`, cadastro da solicitação ligada ao pedido |
+
+<p align="center"><img src="docs/imagens/12_admin_dados.png" alt="Admin: pergunte aos dados" width="88%"><br>
+<b>Modo Admin · 📊 Dados</b>: pergunta ao <b>Genie</b> com gráfico e tabela; dados sensíveis revogados/liberados por <b>ABAC</b> (governed tag + column mask)</p>
 
 ---
 
