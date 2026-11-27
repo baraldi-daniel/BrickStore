@@ -15,7 +15,7 @@
 # MAGIC ```
 # MAGIC  Hugging Face (whisper_modelo) ──► modelo MLflow pyfunc (setup/modelos/whisper_pyfunc.py) ──► UC <catalog>.<schema>.whisper
 # MAGIC                                                                                              │
-# MAGIC                                         endpoint <app_name>-whisper (CPU, scale to zero) ◄────┘
+# MAGIC                                         endpoint <app_name>-whisper (CPU, sempre ligado) ◄────┘
 # MAGIC ```
 # MAGIC
 # MAGIC - Só roda com **`enterprise: true`** no `config.yaml`. Com `false` (padrão) a etapa é pulada e o App funciona igual,
@@ -93,7 +93,7 @@ if ENTERPRISE:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### 2) Endpoint `<app_name>-whisper` (CPU por padrão, scale to zero; sem esperar)
+# MAGIC ### 2) Endpoint `<app_name>-whisper` (CPU por padrão; sempre ligado, ou scale to zero com `whisper_sempre_ligado: false`; sem esperar)
 
 # COMMAND ----------
 
@@ -109,12 +109,22 @@ if VERSAO_WHISPER:
         WHISPER_OK = True
         estado_gravar("whisper_endpoint", WHISPER_ENDPOINT_NOME)
         print(f"↻ endpoint {WHISPER_ENDPOINT_NOME} já serve {NOME_MODELO_WHISPER} v{VERSAO_WHISPER}")
+        # mudou whisper_sempre_ligado no config.yaml: ajusta só o scale to zero, mantendo o resto
+        ents = (existente.get("config") or {}).get("served_entities") or []
+        if any(bool(e.get("scale_to_zero_enabled")) == WHISPER_SEMPRE_LIGADO for e in ents):
+            try:
+                novo = {"served_entities": [{k: e[k] for k in ("name", "entity_name", "entity_version", "workload_type", "workload_size") if e.get(k)}
+                                            | {"scale_to_zero_enabled": not WHISPER_SEMPRE_LIGADO} for e in ents]}
+                w.api_client.do("PUT", f"/api/2.0/serving-endpoints/{WHISPER_ENDPOINT_NOME}/config", body=novo)
+                print("   ajustado: " + ("sempre ligado (sem scale to zero)" if WHISPER_SEMPRE_LIGADO else "scale to zero"))
+            except Exception as e:
+                print("   ⚠️ não consegui ajustar o scale to zero (segue como está):", str(e)[:160])
     else:
         # config.yaml → whisper_compute: CPU (padrão, mais barato) ou GPU_SMALL; se a GPU não existir, cai para CPU
         opcoes = [("CPU", "Medium")] if WHISPER_COMPUTE == "CPU" else [(WHISPER_COMPUTE, "Small"), ("CPU", "Medium")]
         for carga, tamanho in opcoes:
             config = {"served_entities": [{"name": "whisper", "entity_name": NOME_MODELO_WHISPER, "entity_version": str(VERSAO_WHISPER),
-                                           "workload_type": carga, "workload_size": tamanho, "scale_to_zero_enabled": True}]}
+                                           "workload_type": carga, "workload_size": tamanho, "scale_to_zero_enabled": not WHISPER_SEMPRE_LIGADO}]}
             try:
                 if existente:
                     w.api_client.do("PUT", f"/api/2.0/serving-endpoints/{WHISPER_ENDPOINT_NOME}/config", body=config)
@@ -122,7 +132,8 @@ if VERSAO_WHISPER:
                     w.api_client.do("POST", "/api/2.0/serving-endpoints", body={"name": WHISPER_ENDPOINT_NOME, "config": config})
                 WHISPER_OK = True
                 estado_gravar("whisper_endpoint", WHISPER_ENDPOINT_NOME)
-                print(f"＋ endpoint {WHISPER_ENDPOINT_NOME} ({carga}) publicando em segundo plano; a etapa 05a espera ficar pronto")
+                print(f"＋ endpoint {WHISPER_ENDPOINT_NOME} ({carga}, {'sempre ligado' if WHISPER_SEMPRE_LIGADO else 'scale to zero'}) "
+                      "publicando em segundo plano; a etapa 05a espera ficar pronto")
                 break
             except Exception as e:
                 print(f"   • {carga}: {str(e)[:160]}")

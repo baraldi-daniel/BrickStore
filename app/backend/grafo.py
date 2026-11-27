@@ -65,6 +65,7 @@ class Estado(TypedDict, total=False):
     imagem: str | None
     conversa_id: str | None               # id da conversa (o navegador gera; "Nova conversa" troca)
     sacola_atual: list[str]               # o que está na sacola do cliente AGORA (o navegador manda a cada pergunta)
+    acao: str | None                      # ação para a tela (ex.: "abrir_sacola" quando o cliente quer finalizar a compra)
     memoria: list[dict]                   # 🧠 mensagens de conversas anteriores (Lakebase)
     memoria_info: dict
     cliente_id: str | None
@@ -212,6 +213,9 @@ def _msgs_iniciais(estado: Estado, esp: dict) -> list[dict]:
         if estado.get("imagem"):
             msgs[-1]["content"] += f"\n\n[imagem anexada: {estado['imagem']}]"
         sac = estado.get("sacola_atual")
+        pergunta = _ultima(estado)
+        if RX_SOBRE_CONVERSA.search(pergunta) and not re.search(r"sacola|carrinho", pergunta, re.I):
+            sac = None        # "o que eu te disse?": responde pela conversa/memória, não pelo estado da sacola
         if sac is not None:   # o agente responde a verdade sobre a sacola ("você adicionou?")
             msgs[-1]["content"] += ("\n\n[sacola do cliente agora: " + "; ".join(str(x)[:80] for x in sac[:15]) + "]" if sac
                                     else "\n\n[sacola do cliente agora: vazia]")
@@ -263,9 +267,26 @@ def _tool_call_em_texto(conteudo: str, nomes: set):
     return None
 
 
+RX_FINALIZAR = re.compile(r"\b(finaliz\w*|fechar|fecha|concluir|conclui)\b.{0,30}\b(compra|pedido)\b|"
+                          r"\bcheckout\b|\b(quero|vou|posso) pagar\b|\bir para o pagamento\b", re.I)
+
+
+def _finalizar(estado: Estado) -> dict:
+    sac = [str(x) for x in (estado.get("sacola_atual") or [])]
+    if not sac:
+        txt = "Sua sacola está vazia por enquanto. Me diga o que você quer levar e eu coloco na sacola para você."
+        return {"resposta": txt, "pendentes": [], "trilha": ["finalizar"]}
+    itens = "\n".join(f"- {x}" for x in sac[:15])
+    txt = (f"Abri a sua sacola aqui do lado. Você está levando:\n\n{itens}\n\n"
+           "Confira os itens e clique em **Finalizar pedido** para concluir a compra.")
+    return {"resposta": txt, "pendentes": [], "acao": "abrir_sacola", "trilha": ["finalizar"]}
+
+
 def _no_agente(agente: str):
     async def no(estado: Estado, config: RunnableConfig) -> dict:
         esp = ESPECIALISTAS[agente]
+        if estado.get("rodada", 0) == 0 and RX_FINALIZAR.search(_ultima(estado).split("\n\n[")[0]):
+            return _finalizar(estado)   # "quero finalizar a compra": abre a sacola, sem LLM nem ferramenta
         msgs = list(estado.get("msgs") or _msgs_iniciais(estado, esp))
         rodada = estado.get("rodada", 0)
         if rodada >= MAX_RODADAS:
@@ -647,4 +668,5 @@ async def executar(mensagens: list[dict], imagem: str | None, cliente_id: str | 
             "genie": final.get("genie"), "modelos": final.get("modelos") or [], "bloqueado": bool(final.get("bloqueado")),
             "agente": {"id": agente, **G.AGENTES[agente]}, "guardrail": final.get("eventos") or [],
             "trilha": final.get("trilha") or [], "passos": final.get("passos") or [],
-            "agenda": final.get("agenda"), "memoria": final.get("memoria_info") or {}, "sacola": final.get("sacola") or []}
+            "agenda": final.get("agenda"), "memoria": final.get("memoria_info") or {}, "sacola": final.get("sacola") or [],
+            "acao": final.get("acao")}

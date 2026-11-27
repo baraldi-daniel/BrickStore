@@ -51,7 +51,9 @@ def _pronto():
 @app.get("/api/config")
 def config():
     return {"marca": S.MARCA, "slogan": "Tudo para o seu estilo, com inteligência de dados", "dominio": S.dominio(),
-            "memoria": memoria.ativa(), "whisper": _whisper_ligado()}
+            "memoria": memoria.ativa(), "whisper": _whisper_ligado(),
+            # scale to zero (whisper_sempre_ligado: false): a 1ª fala depois de ocioso espera o endpoint acordar
+            "whisper_frio": os.environ.get("NB_WHISPER_SEMPRE_LIGADO", "true").lower() == "false"}
 
 
 def _whisper_ligado() -> bool:
@@ -357,8 +359,47 @@ def admin_conversas():
     if not memoria.ativa():
         return {"ativa": False, "mensagens": []}
     nomes = {p["cliente_id"]: p.get("nome") or p.get("apelido") for p in CATALOGO.perfis}
-    msgs = memoria.todas()
+    msgs = memoria.todas(300)   # ~150 perguntas (pergunta + resposta)
     return {"ativa": True, "mensagens": [{**m, "cliente_nome": nomes.get(m["cliente_id"], m["cliente_id"])} for m in msgs]}
+
+
+@app.post("/api/admin/dados/perguntar")
+def admin_dados_perguntar(pergunta: str = Body(..., embed=True)):
+    """Modo admin · 📊 Dados: pergunta em linguagem natural ao Genie (texto, SQL e tabela; a tela desenha o gráfico)."""
+    pergunta = (pergunta or "").strip()[:500]
+    if not pergunta:
+        raise HTTPException(400, "Escreva uma pergunta.")
+    try:
+        return estudio.dados_perguntar(pergunta)
+    except Exception as e:
+        raise HTTPException(502, f"Genie indisponível: {str(e)[:200]}")
+
+
+@app.get("/api/admin/dados/acesso")
+def admin_dados_acesso():
+    """Modo admin: as colunas sensíveis estão com a governed tag (mascaradas pela policy ABAC) ou liberadas?"""
+    try:
+        return estudio.dados_acesso()
+    except Exception as e:
+        return {"disponivel": False, "motivo": str(e)[:200]}
+
+
+@app.post("/api/admin/dados/acesso")
+def admin_dados_alterar(request: Request, liberar: bool = Body(..., embed=True)):
+    """Modo admin: liberar = tira a governed tag das colunas; revogar = põe a tag (a policy ABAC volta a mascarar)."""
+    try:
+        return estudio.dados_alterar_acesso(liberar, request.headers.get("x-forwarded-access-token"))
+    except Exception as e:
+        raise HTTPException(403, str(e)[:900])
+
+
+@app.get("/api/admin/dados/acesso/execucao")
+def admin_dados_execucao(run_id: int, liberar: bool):
+    """Andamento do job que põe/tira a governed tag (a tela consulta até terminar)."""
+    try:
+        return estudio.dados_execucao(run_id, liberar)
+    except Exception as e:
+        return {"fim": True, "ok": False, "erro": str(e)[:300]}
 
 
 @app.get("/api/admin/solicitacoes")

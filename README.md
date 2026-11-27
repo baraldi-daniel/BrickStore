@@ -58,8 +58,11 @@ Você roda **um único notebook** (`INSTALAR`) e ganha um e-commerce completo co
 | | |
 |:-:|:-:|
 | ![Quem está comprando?](docs/imagens/01_perfis.png) <br> **Perfis de clientes** com histórico e estilo próprios | ![Detetive de produtos](docs/imagens/03_detetive.png) <br> **Detetive de produtos (MCP)**: foto do produto → laudo → parecidos |
-| ![Assistente multiagente](docs/imagens/04_assistente.png) <br> **Assistente multiagente** com trilha dos guardrails | ![Previsão com ai_forecast](docs/imagens/05_previsao.png) <br> **Previsão de vendas sob demanda** com `ai_forecast` |
+| ![Assistente multiagente](docs/imagens/04_assistente.png) <br> **Assistente multiagente**: monta o setup gamer e coloca o monitor na sacola (selos 🔀 do roteador e 🧠 da memória) | ![Previsão com ai_forecast](docs/imagens/05_previsao.png) <br> **Previsão de vendas sob demanda** com `ai_forecast` |
 | ![Painel de ML](docs/imagens/06_estudio_ml.png) <br> **Estúdio**: placar do modelo de recomendação | ![Grafo LangGraph](docs/imagens/07_grafo_langgraph.png) <br> **Grafo LangGraph**: guardrails como nós |
+| ![Pergunta falada no Assistente](docs/imagens/08_voz_chat.png) <br> **🏢 Enterprise · Pergunta falada**: o 🎙️ grava, o **Whisper** transcreve e o áudio aparece no chat | ![Meus pedidos com protocolo do SAC](docs/imagens/09_pedidos_sac.png) <br> **Meus pedidos**: a troca aberta pelo Assistente aparece com protocolo no pedido |
+| ![Admin: pergunte aos dados](docs/imagens/12_admin_dados.png) <br> **Modo Admin · 📊 Dados**: pergunta ao **Genie** com gráfico e tabela; dados sensíveis revogados/liberados por **ABAC** (governed tag + column mask) | |
+| ![Admin: todas as conversas](docs/imagens/10_admin_conversas.png) <br> **Modo Admin · 💬 Conversas**: todas as perguntas, com agente e modelo; bloqueadas em vermelho (Lakebase) | ![SAC por voz](docs/imagens/11_sac_voz.png) <br> **🏢 Enterprise · SAC por voz**: Whisper + `ai_classify` / `ai_extract`, cadastro da solicitação ligada ao pedido |
 
 ---
 
@@ -68,7 +71,7 @@ Você roda **um único notebook** (`INSTALAR`) e ganha um e-commerce completo co
 | # | Passo | Como |
 |:-:|-------|------|
 | 1 | **Trazer o repositório para o workspace** | No Databricks: **Workspace → Create → Git folder** → cole a URL deste repositório. |
-| 2 | **Rodar o `INSTALAR`** | Abra o notebook `INSTALAR` → **Run all**. Leva de 20 a 30 minutos; a indexação do Vector Search é a parte mais lenta. |
+| 2 | **Rodar o `INSTALAR`** | (Opcional) ajuste o [`config.yaml`](config.yaml) e salve. Abra o notebook `INSTALAR` → **Run all**. **Não precisa rodar o `_config`**: a primeira célula do `INSTALAR` já o executa e relê o `config.yaml`. Leva de 20 a 30 minutos; a indexação do Vector Search é a parte mais lenta. |
 | 3 | **Explorar** | No fim aparece o link do App. Escolha um cliente em *"Quem está comprando?"* e navegue. |
 | ➕ | **Roteiro manual** (no final) | o **roteiro manual** (A componentes, B tudo junto no App, C corporativo) no fim do `INSTALAR`: veja [🖐 Roteiro manual](#-roteiro-manual-no-final). Nenhum passo impede o App de subir. |
 
@@ -79,6 +82,11 @@ Você roda **um único notebook** (`INSTALAR`) e ganha um e-commerce completo co
 Os parâmetros ficam no arquivo **[`config.yaml`](config.yaml)**, na raiz do repositório. **Edite-o se precisar**; os
 padrões já funcionam num workspace Databricks novo. Os mesmos valores aparecem como **widgets** no topo do `INSTALAR`, para trocar
 algo só numa execução.
+
+> ⚠️ **Só se o `INSTALAR` já rodou antes:** na primeira execução não há widgets (o `_config` os cria). Depois dela, aparecem
+> campos no topo do notebook (*1. Catálogo*, *2. Schema*, *3. Nome do App*...) com os valores daquela execução, e
+> **o widget vale mais que o `config.yaml`**. Depois de mudar o `config.yaml`, confira os widgets antes do **Run all**: corrija ali ou rode
+> `dbutils.widgets.removeAll()` numa célula para que voltem a ler o arquivo. O `enterprise:` não é widget e vale direto do arquivo.
 
 | Chave do `config.yaml` | Padrão | Observação |
 |--------|--------|------------|
@@ -94,7 +102,8 @@ algo só numa execução.
 | `warehouse_id` | vazio | Vazio = usa o primeiro SQL warehouse serverless do workspace. |
 | `enterprise` | `false` | `true` liga o **SAC por voz com Whisper** (só workspace corporativo). Com `false`, o App funciona igual, sem essa parte. |
 | `whisper_modelo` | `openai/whisper-large-v3-turbo` | Modelo do Hugging Face servido no endpoint `<app_name>-whisper`. |
-| `whisper_compute` | `CPU` | `CPU` (padrão, mais barato) ou `GPU_SMALL` (mais rápido em áudios longos). Scale to zero nos dois. |
+| `whisper_compute` | `CPU` | `CPU` (padrão, mais barato) ou `GPU_SMALL` (mais rápido em áudios longos). |
+| `whisper_sempre_ligado` | `true` | `true`: o endpoint fica sempre pronto (a fala transcreve na hora; cobra enquanto o endpoint existir). `false`: *scale to zero* (mais barato; depois de ocioso, a 1ª fala espera alguns minutos). |
 
 O notebook é **idempotente**: dá para rodar de novo à vontade. Para apagar tudo, use `99_limpar_ambiente`.
 
@@ -135,6 +144,7 @@ INSTALAR
  ├─ 8. setup/05c_lakebase ................. Lakebase (Postgres OLTP) p/ pedidos novos e memória do chat + registro no UC + views vw_*_todos (ao vivo) + synced tables
  ├─ 9. setup/05a_sac_voz .................. SAC por voz: 6 ligações → Whisper → ai_classify / ai_analyze_sentiment / ai_extract (só com enterprise: true)
  ├─ 9b. setup/05_genie .................... Genie Agent via API (tabelas, instruções, joins) + Gmail/Calendar/Drive
+ ├─ 9c. setup/05d_dados_sensiveis ......... ABAC: governed tag dados_sensiveis em clientes.nome/email + policy de máscara (só a penúltima letra)
  ├─ 10. setup/05b_roteador_llm ............ model service no Unity Gateway (routing + fallback + inference table) + tabelas de governança
  ├─ 11. setup/06_app ...................... Databricks App (supervisor + agentes + guardrails) + MCP "Detetive de Produtos"
  ├─ 12. setup/06b_app_mcp ................. App próprio do MCP: mcp-detetive-produtos (aparece no Playground)
@@ -144,7 +154,9 @@ INSTALAR
 ### 📦 Dados (pasta `dados/`)
 Os dados da loja já vêm no repositório, em **Parquet** (~6 MB): `estilos`, `produtos`, `clientes`, `pedidos`,
 `itens_pedido`, `eventos_navegacao` e `perfis_demo`, mais o `manifesto.json` (comentários, tipos, PK/FK). A etapa
-`01_dados` só **carrega** esses arquivos no Unity Catalog. Para regerar (outra marca, outro volume, outra semente):
+`01_dados` só **carrega** esses arquivos no Unity Catalog, com as **datas atualizadas**: pedidos, navegação e cadastros
+de clientes andam o mesmo número de dias para o último pedido cair em *ontem* (assim a previsão, os prazos de troca e
+entrega e os "mais vendidos da semana" ficam atuais em qualquer data de instalação). Para regerar (outra marca, outro volume, outra semente):
 `uv run --python 3.11 --with "pandas<3" --with "numpy<2.3" --with pyarrow python ferramentas/gerar_dados.py`.
 Tudo é **fictício** e determinístico.
 
@@ -173,7 +185,9 @@ Tudo é **fictício** e determinístico.
 | Synced table | `lb_produtos`, `lb_recomendacoes` | Cópias Delta → Postgres (snapshot) para leitura OLTP de baixa latência |
 | Tabela | `solicitacoes_atendimento` | Trocas, devoluções, garantias e reclamações abertas pelo Agente de Pós-venda (com protocolo) |
 | Tabela | `atendimentos_voz` | Só com `enterprise: true`: ligações do SAC transcritas pelo **Whisper** + categoria, sentimento e pedido (funções de IA) |
-| Modelo UC / Endpoint | `whisper` / `<app>-whisper` | Só com `enterprise: true`: Whisper (Hugging Face) como pyfunc, servido em CPU com scale to zero |
+| Modelo UC / Endpoint | `whisper` / `<app>-whisper` | Só com `enterprise: true`: Whisper (Hugging Face) como pyfunc, servido em CPU, sempre ligado (ou scale to zero com `whisper_sempre_ligado: false`) |
+| ABAC | governed tag `dados_sensiveis`, função `mascara_penultima`, policy `mascara_dados_sensiveis` (no schema) | **Dados sensíveis**: a policy mascara as colunas **com a tag** (`clientes.nome`, `clientes.email`), deixando só a penúltima letra; no App, *Estúdio → 📊 Dados* revoga (põe a tag) ou libera (tira a tag) disparando o job abaixo |
+| Job | `<app> · acesso a dados sensíveis (ABAC)` | Põe/tira a governed tag **como quem instalou** (dono da tabela e da tag); o App só tem permissão para dispará-lo (`CAN_MANAGE_RUN`), sem consentimento extra. Leva ~30 s (serverless) |
 | Tabela | `_lab_estado` | Ids dos recursos criados por esta instalação (ex.: Genie), para nunca usar um de outra pessoa |
 | Model service | `assistente_llm` | Roteador do Unity Gateway (50/50 + fallback); inference table `assistente_llm_payload` |
 | View | `vw_vendas_produto`, `vw_cestas_mais_fortes` | Apoio ao Genie |
@@ -196,7 +210,7 @@ Fora do schema: o App, o Genie *"BrickStore · Genie de Dados"* e o dashboard *"
 | **Busca** | Busca por significado ("luminária para sala escandinava até R$ 300") | `produtos_index` |
 | **Meus pedidos** | Histórico do cliente | `pedidos` |
 | **💬 Assistente** | Chat com anexo de imagem (e 🎙️ microfone, com `enterprise: true`). Mostra **qual agente atendeu**, as ferramentas usadas, **qual modelo respondeu** (🔀) e os selos de **guardrail**; coloca produtos **na sacola de verdade** (`adicionar_a_sacola`) e sabe o que já está nela | supervisor + 3 agentes + MCP Detetive + MCP do Genie + RAG, via roteador do Unity Gateway |
-| **🎛️ Estúdio** (modo **Admin**: checkbox no topo) | Painel, **novo produto a partir de PDF** (com as etapas reais do processamento), edição, previsão, **💬 Conversas** (todas as perguntas de todos os clientes, inclusive as bloqueadas, com agente e modelo), central de ajuda, página do MCP e a aba **🧠 Modelo** (roteador × modelo direto) | `ai_parse_document`, Delta DML, sync do VS, Unity Gateway |
+| **🎛️ Estúdio** (modo **Admin**: checkbox no topo) | Painel, **novo produto a partir de PDF** (com as etapas reais do processamento), edição, previsão, **📊 Dados** (pergunte ao Genie em português, com gráfico de barras, linha ou pizza quando pedir, e os botões **Revogar / Liberar** dados sensíveis por **ABAC**), **💬 Conversas** (todas as perguntas de todos os clientes, inclusive as bloqueadas, com agente e modelo), central de ajuda, página do MCP e a aba **🧠 Modelo** (roteador × modelo direto) | `ai_parse_document`, Delta DML, sync do VS, Unity Gateway |
 | **📞 SAC por voz** (aba do Estúdio, só com `enterprise: true`) | **Gravar no microfone**, envio de arquivo, histórico de **todos os clientes** (com as 6 ligações gravadas antes) e **Cadastrar no SAC**: abre a solicitação ligada ao **pedido** (aparece em *Meus pedidos*) | **Whisper** (Model Serving) + `ai_classify`, `ai_analyze_sentiment`, `ai_extract` + Lakebase |
 
 ### Estúdio: cadastro a partir da ficha técnica (PDF)
@@ -514,7 +528,7 @@ Depois do `INSTALAR`, o fim do próprio notebook traz o **roteiro manual**: uma 
 | Parte | O quê | Exemplos |
 |:-----:|-------|----------|
 | **A** | Cada componente **sozinho** (A1 a A7) | *Catalog → produtos → Sample Data*; **ai_parse_document** subindo uma ficha em PDF no Estúdio do App e vendo o mapeamento (elementos, tabelas, imagens, campos); recomendação (regras + ML) em *Serving → brickstore-recomendador → Query endpoint*; Genie; roteador no Playground perguntando *"qual modelo é você?"* várias vezes (balanço 50/50); MCP Detetive no Playground com a foto de exemplo do Volume; Gmail pelo Genie One |
-| **B** | **Tudo junto no App** (B1 a B19) | comprar um **boné** e ver em *Meus pedidos*; no Assistente: pedidos em transporte, tênis de corrida, setup gamer, colocar o monitor na sacola e perguntar o que tem nela, *"qual modelo é você?"* (roteador 50/50), política de trocas (RAG), memória (*"qual foi a minha última pergunta?"*), status do pedido, prompt injection e *"sentido da vida"* bloqueados; Detetive com a foto; **modo Admin**: conversas de todos os clientes, produto novo a partir do PDF e `ai_forecast`; **🏢 Enterprise ·** perguntas faladas no Assistente (🎙️ Whisper: um conjunto até R$ 600 e uma troca por tamanho errado) e o SAC por voz (gravar, corrigir, abrir a solicitação) |
+| **B** | **Tudo junto no App** (B1 a B20) | comprar um **boné** e ver em *Meus pedidos*; no Assistente: pedidos em transporte, tênis de corrida, setup gamer, colocar o monitor na sacola e perguntar o que tem nela, política de trocas (RAG), memória (*"qual foi a minha última pergunta?"*), status do pedido, prompt injection e *"sentido da vida"* bloqueados; Detetive com a foto; **modo Admin**: conversas de todos os clientes, **📊 Dados** (pergunte ao Genie com gráfico; revogar/liberar dados sensíveis por **ABAC**), produto novo a partir do PDF e `ai_forecast`; **🏢 Enterprise ·** perguntas faladas no Assistente (🎙️ Whisper: um look esportivo com boné e uma troca do último pedido, confirmada no chat) e o SAC por voz (gravar, corrigir, abrir a solicitação) |
 | **C** | **🏢 Enterprise (Beta)** | **C1** uma service policy com **LLM-as-a-judge** no `assistente_llm` (um prompt, dois testes no App); **C2** Omnigent (um exemplo com Smart Routing e um com as policies do workspace); **C3** Genie App Builder (*Vendas da BrickStore*), o fim do roteiro |
 
 ⚠️ **Parte C em Beta:** antes, um admin habilita em *Settings → Previews*: **Unity Gateway Service Policies** (C1),
@@ -568,7 +582,6 @@ brickstore/
 - [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md): fluxos, autenticação e decisões de design
 - [`docs/MCP_DETETIVE.md`](docs/MCP_DETETIVE.md): o servidor MCP em detalhe
 - [`docs/ENTERPRISE.md`](docs/ENTERPRISE.md): extras do workspace corporativo (SAC por voz com Whisper, service policies, Omnigent, Genie App Builder)
-- [`docs/ROTEIRO_DEMO.md`](docs/ROTEIRO_DEMO.md): roteiro de 20 minutos
 - [`docs/ESPEC_VAREJO.md`](docs/ESPEC_VAREJO.md): contrato de dados e API (tabelas, colunas, endpoints)
 
 ---

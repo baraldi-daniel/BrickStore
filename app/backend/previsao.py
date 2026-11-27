@@ -55,28 +55,46 @@ METRICAS = {"receita": "sum(i.quantidade * i.preco_unitario)", "quantidade": "su
 GRANULARIDADES = {"dia": ("CAST(p.data_pedido AS DATE)", "day"), "semana": ("CAST(date_trunc('WEEK', p.data_pedido) AS DATE)", "week")}
 
 
-def _sql_serie(filtro_tipo: str, metrica: str, granularidade: str, historico_dias: int, incluir_hoje: bool = False) -> str:
+def _sql_serie(filtro_tipo: str, metrica: str, granularidade: str, historico_dias: int, ate: date,
+               incluir_hoje: bool = False) -> str:
     """Série com CALENDÁRIO COMPLETO: dia (ou semana) sem venda entra como 0. Sem isso, um produto que vende pouco
     (ex.: 30 dias com venda em 180) pareceria vender todo dia e a previsão sairia várias vezes acima do real.
 
-    - dia: de hoje-historico_dias até ontem (o dia de hoje está incompleto); `incluir_hoje=True` acrescenta hoje, só
-      para MOSTRAR no gráfico a compra que acabou de ser feita (o modelo nunca treina com o dia incompleto);
-    - semana: só semanas INTEIRAS do calendário (7 dias dentro da janela; a semana corrente fica de fora).
+    - a janela termina em `ate`, o ÚLTIMO DIA COM DADOS da loja (antes de hoje): dias depois dele não são "dias sem venda",
+      são falta de dado, e entrar com 0 faria o ai_forecast prever queda (ex.: a loja inteira "caindo" a zero);
+    - `incluir_hoje=True` acrescenta hoje (dia incompleto) só para MOSTRAR no gráfico a compra que acabou de ser feita;
+      o modelo nunca treina com ele;
+    - semana: só semanas INTEIRAS (7 dias dentro da janela).
     """
     coluna = FILTROS[filtro_tipo]
     where = f" AND {coluna} = :valor" if coluna else ""
     h = int(historico_dias)
-    fim = "current_date()" if (incluir_hoje and granularidade == "dia") else "date_sub(current_date(), 1)"
+    ate_sql = f"DATE'{ate.isoformat()}'"
+    hoje_dia = incluir_hoje and granularidade == "dia"
+    filtro_data = (f"(CAST(p.data_pedido AS DATE) <= {ate_sql} OR CAST(p.data_pedido AS DATE) = current_date())" if hoje_dia
+                   else f"CAST(p.data_pedido AS DATE) <= {ate_sql}")
     vendas = (f"SELECT CAST(p.data_pedido AS DATE) AS dia, CAST({METRICAS[metrica]} AS DOUBLE) AS valor "
               f"FROM {_T('pedidos')} p JOIN {_T('itens_pedido')} i USING (pedido_id) JOIN {S.fq('produtos')} pr USING (produto_id) "
-              f"WHERE p.status <> 'Cancelado' AND p.data_pedido >= date_sub(current_date(), {h}) "
-              f"AND CAST(p.data_pedido AS DATE) <= {fim}{where} GROUP BY 1")
-    calendario = f"SELECT explode(sequence(date_sub(current_date(), {h}), {fim}, INTERVAL 1 DAY)) AS dia"
+              f"WHERE p.status <> 'Cancelado' AND p.data_pedido >= date_sub({ate_sql}, {h}) AND {filtro_data}{where} GROUP BY 1")
+    calendario = f"SELECT explode(sequence(date_sub({ate_sql}, {h}), {ate_sql}, INTERVAL 1 DAY)) AS dia"
+    if hoje_dia and ate < date.today():
+        calendario += " UNION ALL SELECT current_date() AS dia"
     if granularidade == "semana":
         return (f"SELECT CAST(date_trunc('WEEK', c.dia) AS DATE) AS data, sum(coalesce(v.valor, 0)) AS valor "
                 f"FROM ({calendario}) c LEFT JOIN ({vendas}) v USING (dia) "
                 f"GROUP BY 1 HAVING count(*) = 7")
     return f"SELECT c.dia AS data, coalesce(v.valor, 0) AS valor FROM ({calendario}) c LEFT JOIN ({vendas}) v USING (dia)"
+
+
+def ultimo_dia_com_dados() -> date:
+    """Último dia (antes de hoje) com algum pedido na loja; sem dados, ontem."""
+    ontem = date.today() - timedelta(days=1)
+    try:
+        l = S.sql(f"""SELECT CAST(max(CAST(data_pedido AS DATE)) AS STRING) AS d FROM {_T('pedidos')}
+                      WHERE status <> 'Cancelado' AND CAST(data_pedido AS DATE) < current_date()""")
+        return min(ontem, date.fromisoformat(l[0]["d"])) if l and l[0].get("d") else ontem
+    except Exception:
+        return ontem
 
 
 def prever(filtro_tipo: str = "total", valor: str | None = None, metrica: str = "receita", granularidade: str = "dia",
@@ -102,8 +120,9 @@ def prever(filtro_tipo: str = "total", valor: str | None = None, metrica: str = 
     fim = hoje + timedelta(days=horizonte)
     if granularidade == "semana":
         fim = hoje - timedelta(days=hoje.weekday()) + timedelta(weeks=max(1, round(horizonte / 7)))
-    serie_sql = _sql_serie(filtro_tipo, metrica, granularidade, historico_dias)                        # treina o modelo
-    serie_tela = _sql_serie(filtro_tipo, metrica, granularidade, historico_dias, incluir_hoje=True)    # mostra (inclui hoje)
+    ate = ultimo_dia_com_dados()
+    serie_sql = _sql_serie(filtro_tipo, metrica, granularidade, historico_dias, ate)                        # treina o modelo
+    serie_tela = _sql_serie(filtro_tipo, metrica, granularidade, historico_dias, ate, incluir_hoje=True)    # mostra (inclui hoje)
     params = {"valor": valor} if FILTROS[filtro_tipo] else None
     sql_forecast = (f"SELECT CAST(data AS STRING) AS data, valor_forecast AS valor, valor_lower AS inferior, valor_upper AS superior "
                     f"FROM ai_forecast(observed => TABLE({serie_sql}), horizon => '{fim.isoformat()}', time_col => 'data', "
@@ -112,7 +131,10 @@ def prever(filtro_tipo: str = "total", valor: str | None = None, metrica: str = 
     t0 = time.perf_counter()
     real = S.sql(f"SELECT CAST(data AS STRING) AS data, round(valor, 2) AS valor FROM ({serie_tela}) ORDER BY data", params)
     t1 = time.perf_counter()
-    com_venda = sum(1 for l in real if float(l["valor"] or 0) > 0)
+    for l in real:   # hoje está incompleto (só as compras feitas agora no App): a tela mostra como ponto à parte
+        if l["data"] == hoje.isoformat():
+            l["parcial"] = True
+    com_venda = sum(1 for l in real if float(l["valor"] or 0) > 0 and not l.get("parcial"))
     erro = ("histórico curto demais para prever (menos de 8 períodos)" if len(real) < 8 else
             "sem vendas no período escolhido" if com_venda == 0 else
             "poucas vendas no período (menos de 3 períodos com venda) para uma previsão útil" if com_venda < 3 else None)

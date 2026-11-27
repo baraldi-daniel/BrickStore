@@ -716,7 +716,7 @@ async function investigar(arquivo) {
 }
 
 /* ───────────── Estúdio (controle da loja) ───────────── */
-const ESTUDIO_ABAS = [["painel", "Painel"], ["novo", "+ Novo produto (PDF)"], ["produtos", "Produtos"], ["previsao", "📈 Previsão"], ["modelo", "🧠 Modelo"], ["conversas", "💬 Conversas"], ["ajuda", "Central de ajuda"], ["mcp", "MCP"]];
+const ESTUDIO_ABAS = [["painel", "Painel"], ["novo", "+ Novo produto (PDF)"], ["produtos", "Produtos"], ["previsao", "📈 Previsão"], ["dados", "📊 Dados"], ["modelo", "🧠 Modelo"], ["conversas", "💬 Conversas"], ["ajuda", "Central de ajuda"], ["mcp", "MCP"]];
 const aba = (tok, html) => { if (tok === E.tok) { const el = $("#aba"); if (el) el.innerHTML = html; } };
 function paginaEstudio([sub = "painel"], _q, tok) {
   if (!E.admin) {
@@ -734,8 +734,134 @@ function paginaEstudio([sub = "painel"], _q, tok) {
     E.sacVoz = false;
     api("/api/voz/disponivel").then(r => { if (r.disponivel) { E.sacVoz = true; if (tok === E.tok) paginaEstudio([sub], _q, tok); } }).catch(() => { });
   }
-  const fn = { painel: abaPainel, novo: abaNovo, produtos: abaProdutos, previsao: abaPrevisao, modelo: abaModelo, conversas: abaConversas, voz: abaVoz, ajuda: abaAjuda, mcp: abaMcp }[sub] || abaPainel;
+  const fn = { painel: abaPainel, novo: abaNovo, produtos: abaProdutos, previsao: abaPrevisao, dados: abaDados, modelo: abaModelo, conversas: abaConversas, voz: abaVoz, ajuda: abaAjuda, mcp: abaMcp }[sub] || abaPainel;
   fn(tok);
+}
+/* ── 📊 Dados (admin): perguntas ao Genie com tabela e gráfico + acesso a dados sensíveis por ABAC ── */
+const SUGESTOES_DADOS = ["Quantos produtos temos por departamento? Mostre em gráfico",
+  "Quais os 10 produtos mais comprados? Gráfico de barras", "Receita por mês nos últimos 6 meses, em gráfico de linha",
+  "O que o cliente Gustavo Dias comprou?", "Qual o nome e o e-mail dos 5 clientes que mais gastaram?"];
+async function abaDados(tok) {
+  aba(tok, `<div class="dados-grade">
+    <section class="painel dados-perg">
+      <h3>📊 Pergunte aos dados</h3>
+      <p class="assoc-legenda">Pergunta em português → <b>Genie</b> gera o SQL e roda no warehouse. Peça <i>"em gráfico"</i> (barras, linha ou pizza) para ver o gráfico.</p>
+      <form id="dados-form" class="dados-form"><input id="dados-input" placeholder="Ex.: quais os 10 produtos mais comprados? mostre em gráfico" autocomplete="off">
+        <button class="btn btn-lava">Perguntar</button></form>
+      <div class="dados-sug">${SUGESTOES_DADOS.map(q => `<button type="button" class="chip" data-q="${escHTML(q)}">${escHTML(q)}</button>`).join("")}</div>
+      <div id="dados-res"></div>
+    </section>
+    <aside class="painel dados-acesso" id="dados-acesso">${carregandoHTML()}</aside></div>`);
+  const f = $("#dados-form"), inp = $("#dados-input");
+  $$(".dados-sug [data-q]").forEach(b => b.onclick = () => { inp.value = b.dataset.q; f.requestSubmit(); });
+  f.onsubmit = async ev => {
+    ev.preventDefault(); const q = inp.value.trim(); if (!q) return;
+    const bt = f.querySelector("button"); bt.disabled = true; bt.innerHTML = `<span class="spin"></span> Genie pensando…`;
+    const card = document.createElement("div"); card.className = "dados-card";
+    card.innerHTML = `<div class="dados-q">🙋 ${escHTML(q)}</div><div class="dados-a"><span class="spin"></span> consultando o Genie…</div>`;
+    $("#dados-res").prepend(card);
+    try { card.querySelector(".dados-a").innerHTML = dadosRespostaHTML(await api("/api/admin/dados/perguntar", { json: { pergunta: q } }), q); ligarGraficoDados(card); }
+    catch (e) { card.querySelector(".dados-a").innerHTML = `<div class="painel painel-erro"><b>Não deu</b><span>${escHTML(e.message)}</span></div>`; }
+    bt.disabled = false; bt.textContent = "Perguntar";
+  };
+  dadosAcesso();
+}
+async function dadosAcesso(acao) {
+  const box = $("#dados-acesso"); if (!box) return;
+  let d;
+  try {
+    if (acao === undefined) d = await api("/api/admin/dados/acesso");
+    else {   // dispara o job (roda como o dono da tabela) e acompanha até terminar
+      d = await api("/api/admin/dados/acesso", { json: { liberar: acao } });
+      const ini = Date.now();
+      while (d.run_id && !d.fim) {
+        const b = $(acao ? "#abac-liberar" : "#abac-revogar");
+        if (b) b.innerHTML = `<span class="spin"></span> ${acao ? "liberando" : "revogando"}… job ${escHTML(String(d.fase || "PENDING").toLowerCase())} · ${Math.round((Date.now() - ini) / 1000)} s`;
+        await new Promise(r => setTimeout(r, 2000));
+        d = await api(`/api/admin/dados/acesso/execucao?run_id=${encodeURIComponent(d.run_id)}&liberar=${acao}`);
+        if (Date.now() - ini > 300000) throw new Error("o job passou de 5 min; confira em Jobs & Pipelines");
+      }
+      if (d.ok === false) throw new Error(d.erro || "o job falhou");
+    }
+  }
+  catch (e) { toastErro(e); if (acao !== undefined) { await dadosAcesso(); return false; } box.innerHTML = `<b>Acesso indisponível</b><p class="assoc-legenda">${escHTML(e.message)}</p>`; return; }
+  if (!d.disponivel) { box.innerHTML = `<h3>🔐 Dados sensíveis</h3><p class="assoc-legenda">${escHTML(d.motivo || "ABAC indisponível neste workspace.")}</p>`; return; }
+  const m = d.mascarado;
+  box.innerHTML = `<h3>🔐 Dados sensíveis (ABAC)</h3>
+    <div class="abac-status ${m ? "on" : "off"}">${m ? "🔒 Mascarados" : "🔓 Liberados"}</div>
+    <p class="assoc-legenda">Governed tag <code>${escHTML(d.tag)}</code> nas colunas abaixo → a policy <code>${escHTML(d.policy || "")}</code> mascara
+      <b>tudo menos a penúltima letra</b>. Revogar = <b>pôr</b> a tag; liberar = <b>tirar</b> a tag (um job roda como o dono da tabela).</p>
+    <ul class="abac-cols">${d.colunas.map(c => `<li>${c.protegida ? "🏷️" : "▫️"} <code>${escHTML(c.coluna)}</code> ${c.protegida ? "com a tag" : "sem a tag"}</li>`).join("")}</ul>
+    <div class="botoes"><button class="btn ${m ? "btn-lava" : "btn-borda"}" id="abac-liberar" ${m ? "" : "disabled"}>🔓 Liberar acesso</button>
+      <button class="btn ${m ? "btn-borda" : "btn-lava"}" id="abac-revogar" ${m ? "disabled" : ""}>🔒 Revogar acesso</button></div>
+    ${(d.amostra || []).length ? `<h4>Como os dados aparecem agora</h4><table class="tabela-ml abac-amostra"><thead><tr><th>Cliente</th><th>Nome</th><th>E-mail</th></tr></thead>
+      <tbody>${d.amostra.map(a => `<tr><td class="mono">${escHTML(a.cliente_id)}</td><td class="mono">${escHTML(a.nome)}</td><td class="mono">${escHTML(a.email)}</td></tr>`).join("")}</tbody></table>` : ""}
+    ${d.sql ? `<details class="fc-sql" open><summary>SQL executado pelo ${escHTML(d.executado_por || "")}${d.ms ? ` · ${(d.ms / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} s` : ""}</summary><pre class="sql">${escHTML(d.sql.join(";\n") + ";")}</pre>
+      ${d.job_link ? `<a href="${escHTML(d.job_link)}" target="_blank" rel="noopener">ver a execução do job ↗</a>` : ""}</details>` : ""}`;
+  const bl = $("#abac-liberar"), br = $("#abac-revogar");
+  const clicar = (b, v) => b && (b.onclick = async () => { b.disabled = true;
+    b.innerHTML = `<span class="spin"></span> ${v ? "liberando" : "revogando"}… (job serverless, ~30 s)`;
+    if (await dadosAcesso(v)) toast(`<div class="toast-txt"><b>${v ? "Acesso liberado" : "Acesso revogado"}</b><span>Pergunte de novo para ver o efeito.</span></div>`, 3000); });
+  clicar(bl, true); clicar(br, false);
+  return true;
+}
+const ehNumero = v => v !== null && v !== "" && !isNaN(Number(v));
+function dadosRespostaHTML(r, q) {
+  const cols = r.colunas || [], linhas = r.linhas || [];
+  const selo = r.mascarado === true ? `<span class="abac-selo on">🔒 dados sensíveis mascarados</span>` : r.mascarado === false ? `<span class="abac-selo off">🔓 dados sensíveis liberados</span>` : "";
+  const fmt = v => ehNumero(v) && String(v).length < 16 ? Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) : String(v ?? "");
+  const tabela = cols.length ? `<div class="dados-tab-caixa"><table class="tabela-ml dados-tab"><thead><tr>${cols.map(c => `<th>${escHTML(c)}</th>`).join("")}</tr></thead>
+    <tbody>${linhas.map(l => `<tr>${l.map(v => `<td class="${ehNumero(v) ? "num" : ""}">${escHTML(fmt(v))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : "";
+  const podeGrafico = cols.length >= 2 && linhas.length >= 2 && cols.some((c, i) => linhas.every(l => l[i] === null || ehNumero(l[i])));
+  return `${selo}${r.texto ? `<div class="dados-texto">${md(r.texto)}</div>` : ""}
+    ${podeGrafico ? `<div class="dados-graf" data-cols="${escHTML(JSON.stringify(cols))}" data-linhas="${escHTML(JSON.stringify(linhas.slice(0, 30)))}"
+      data-q="${escHTML(q)}" data-auto="${r.pediu_grafico ? 1 : 0}">${r.pediu_grafico ? "" : `<button class="btn btn-borda btn-sm" data-gerar-grafico>📊 Gerar gráfico</button>`}</div>` : ""}
+    ${tabela}${!cols.length && !r.texto ? `<p class="assoc-legenda">O Genie não trouxe resultado.</p>` : ""}
+    ${r.sql ? `<details class="fc-sql"><summary>SQL gerado pelo Genie · ${((r.ms || 0) / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} s</summary><pre class="sql">${escHTML(r.sql)}</pre></details>` : ""}`;
+}
+function ligarGraficoDados(card) {
+  const g = card.querySelector(".dados-graf"); if (!g) return;
+  const desenhar = () => { g.innerHTML = graficoDadosSVG(JSON.parse(g.dataset.cols), JSON.parse(g.dataset.linhas), g.dataset.q); };
+  if (g.dataset.auto === "1") desenhar();
+  const b = g.querySelector("[data-gerar-grafico]"); if (b) b.onclick = desenhar;
+}
+// gráfico a partir do resultado: 1ª coluna de texto = rótulo, 1ª numérica (que não seja id/ano/mês) = valor;
+// linha (datas ou "linha" na pergunta), pizza ("pizza"/"rosca") ou barras; passe o mouse para ver o valor
+function graficoDadosSVG(cols, linhas, q) {
+  const numerica = i => linhas.every(l => l[i] === null || ehNumero(l[i]));
+  let iv = cols.findIndex((c, i) => numerica(i) && !/(^|_)(id|ano|mes|m[eê]s)$/i.test(c));
+  if (iv < 0) iv = cols.findIndex((c, i) => numerica(i));
+  let ir = cols.findIndex((c, i) => i !== iv && !numerica(i));
+  if (ir < 0) ir = iv === 0 ? 1 : 0;
+  const pts = linhas.map(l => ({ r: String(l[ir] ?? ""), v: Number(l[iv]) || 0 })).slice(0, 24);
+  const datas = pts.every(p => /^\d{4}-\d{2}/.test(p.r));
+  const tipo = /pizza|rosca/i.test(q) ? "pizza" : (datas || /linha/i.test(q)) ? "linha" : "barras";
+  const fmt = v => v.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+  const rot = r => datas ? r.slice(0, 10).split("-").reverse().join("/").replace(/^01\//, "") : r;
+  const titulo = `<p class="dados-graf-t">${escHTML(cols[iv])} por ${escHTML(cols[ir])}</p>`;
+  if (tipo === "pizza") {
+    const tot = pts.reduce((a, p) => a + Math.max(0, p.v), 0) || 1, cores = ["#FF3621", "#1B3139", "#2272B4", "#00A972", "#FFAB00", "#8A6FDF", "#98102A", "#5A6F77"];
+    let ang = -Math.PI / 2;
+    const fatias = pts.map((p, k) => {
+      const a = (Math.max(0, p.v) / tot) * Math.PI * 2, x1 = 150 + 110 * Math.cos(ang), y1 = 130 + 110 * Math.sin(ang);
+      ang += a; const x2 = 150 + 110 * Math.cos(ang), y2 = 130 + 110 * Math.sin(ang);
+      return `<path d="M150,130 L${x1.toFixed(1)},${y1.toFixed(1)} A110,110 0 ${a > Math.PI ? 1 : 0} 1 ${x2.toFixed(1)},${y2.toFixed(1)} Z" fill="${cores[k % cores.length]}"><title>${escHTML(rot(p.r))}: ${fmt(p.v)} (${(100 * p.v / tot).toFixed(1)}%)</title></path>`;
+    });
+    return `${titulo}<div class="dados-pizza"><svg viewBox="0 0 300 260"><g>${fatias.join("")}</g><circle cx="150" cy="130" r="55" fill="#fff"/></svg>
+      <ul>${pts.map((p, k) => `<li><i style="background:${cores[k % cores.length]}"></i>${escHTML(rot(p.r))} <b>${(100 * p.v / tot).toFixed(1)}%</b></li>`).join("")}</ul></div>`;
+  }
+  const max = Math.max(...pts.map(p => p.v), 0) || 1;
+  if (tipo === "linha") {
+    const W = 720, H = 260, M = { l: 70, r: 16, t: 14, b: 34 };
+    const X = i => M.l + (i / Math.max(1, pts.length - 1)) * (W - M.l - M.r), Y = v => M.t + (1 - v / (max * 1.08)) * (H - M.t - M.b);
+    return `${titulo}<svg class="dados-svg" viewBox="0 0 ${W} ${H}">
+      ${[0, .5, 1].map(t => `<line x1="${M.l}" x2="${W - M.r}" y1="${Y(t * max)}" y2="${Y(t * max)}" class="grade"/><text x="${M.l - 6}" y="${Y(t * max) + 4}" text-anchor="end">${fmt(Math.round(t * max))}</text>`).join("")}
+      <path d="${pts.map((p, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(p.v).toFixed(1)}`).join(" ")}" class="real"/>
+      ${pts.map((p, i) => `<circle cx="${X(i)}" cy="${Y(p.v)}" r="4" class="dados-pt"><title>${escHTML(rot(p.r))}: ${fmt(p.v)}</title></circle>
+        <text x="${X(i)}" y="${H - 10}" text-anchor="middle">${escHTML(rot(p.r).slice(0, 10))}</text>`).join("")}</svg>`;
+  }
+  return `${titulo}<div class="dados-barras">${pts.map(p => `<div class="barra" title="${escHTML(p.r)}: ${fmt(p.v)}"><span class="rot">${escHTML(p.r)}</span>
+    <span class="dados-trilho"><span class="enche" style="width:${(100 * Math.max(0, p.v) / max).toFixed(1)}%"></span></span><b>${fmt(p.v)}</b></div>`).join("")}</div>`;
 }
 /* ── 🧠 Modelo do Assistente (admin): roteador do Unity Gateway × modelo direto ── */
 async function abaModelo(tok) {
@@ -758,7 +884,7 @@ async function abaModelo(tok) {
       <tr><td>Service policies do Unity Gateway (selo 🛡️ Unity Gateway)</td><td>✅</td><td>—</td></tr>
       <tr><td>Guardrails do grafo do App (dados sensíveis, jailbreak, juiz)</td><td>✅</td><td>✅</td></tr>
     </tbody></table>
-    <p class="assoc-legenda">Teste: troque o modelo e pergunte no Assistente <i>"Qual modelo é você?"</i> e <i>"A loja X vende mais barato?"</i>; compare os selos 🔀 e 🛡️.</p>
+    <p class="assoc-legenda">Teste: troque o modelo e peça no Assistente <i>"Monte um setup gamer até R$ 3 mil"</i> (o selo 🔀 mostra qual modelo respondeu) e <i>"A loja X vende mais barato?"</i> (com o roteador e a service policy, selo 🛡️).</p>
   </section>`);
   $$("input[name=modelo]").forEach(r => r.onchange = () => $$(".modelo-op").forEach(l => l.classList.toggle("sel", l.contains(r) && r.checked)));
   $("#trocar-modelo").onclick = async () => {
@@ -769,25 +895,37 @@ async function abaModelo(tok) {
   };
 }
 /* ── 💬 Conversas (admin): todas as perguntas do Assistente, de todos os clientes ── */
+const NOME_AGENTE = { vendas: "🛍️ Vendas", pos_venda: "📦 Pós-venda", analista: "📊 Analista" };
 async function abaConversas(tok) {
   aba(tok, carregandoHTML());
   let d;
   try { d = await api("/api/admin/conversas"); } catch (e) { aba(tok, `<div class="painel painel-erro"><b>Conversas indisponíveis</b><span>${escHTML(e.message)}</span></div>`); return; }
   if (!d.ativa) { aba(tok, `<div class="painel"><b>Sem Lakebase</b><p class="assoc-legenda">As conversas ficam na tabela <code>loja.conversas</code> do Lakebase; sem ele, nada é gravado.</p></div>`); return; }
-  const msgs = d.mensagens || [];
+  // uma linha por pergunta: junta cada pergunta (🙋) com a resposta (🤖) que veio logo depois, na mesma conversa
+  const msgs = [...(d.mensagens || [])].sort((a, b) => String(a.criado_em).localeCompare(String(b.criado_em)));
+  const turnos = [];
+  msgs.forEach(m => {
+    if (m.papel === "user") turnos.push({ ...m, pergunta: m.conteudo, resposta: "" });
+    else { const t = [...turnos].reverse().find(x => x.conversa_id === m.conversa_id && !x.resposta);
+           if (t) Object.assign(t, { resposta: m.conteudo, agente: m.agente || t.agente, modelo: m.modelo }); }
+  });
+  turnos.reverse();
   const quando = t => new Date(t).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-  const nBloq = msgs.filter(m => m.papel === "user" && m.agente === "bloqueado").length;
+  const limpo = t => String(t || "").replace(/\*\*|__|`/g, "").replace(/\s+/g, " ").trim();
+  const nBloq = turnos.filter(t => t.agente === "bloqueado").length;
   aba(tok, `<section class="painel conversas-admin">
     <h3>💬 Todas as perguntas do Assistente · todos os clientes</h3>
-    <p class="assoc-legenda">${numPT(msgs.filter(m => m.papel === "user").length)} perguntas recentes, ${numPT(nBloq)} bloqueadas pelos guardrails (em vermelho; não entram na memória do cliente).
-      Fonte: <code>loja.conversas</code> no Lakebase, também lida no Lakehouse pelo catálogo registrado.</p>
+    <p class="assoc-legenda">${numPT(turnos.length)} perguntas (as mais recentes primeiro), ${numPT(nBloq)} bloqueadas pelos guardrails (em vermelho; não entram na memória do cliente).
+      Fonte: <code>loja.conversas</code> no Lakebase desta instalação (cada <code>INSTALAR</code> cria um Lakebase novo), também lida no Lakehouse pelo catálogo registrado.</p>
     <button class="btn btn-borda btn-sm" id="conv-atualizar">↻ Atualizar</button>
-    <table class="tabela-ml conv-tab"><thead><tr><th>Quando</th><th>Cliente</th><th></th><th>Mensagem</th><th>Agente</th><th>Modelo</th></tr></thead>
-    <tbody>${msgs.map(m => `<tr class="${m.agente === "bloqueado" ? "bloq" : ""} ${m.papel}">
-      <td class="mono">${escHTML(quando(m.criado_em))}</td><td>${escHTML(m.cliente_nome || m.cliente_id || "")}</td>
-      <td>${m.papel === "user" ? "🙋" : "🤖"}</td><td>${escHTML(String(m.conteudo || "").slice(0, 260))}</td>
-      <td>${m.agente === "bloqueado" ? "🛡️ bloqueado" : escHTML(m.agente || "")}</td><td class="mono">${escHTML(m.modelo || "")}</td></tr>`).join("")
-      || `<tr><td colspan="6">Nenhuma conversa ainda.</td></tr>`}</tbody></table></section>`);
+    <table class="tabela-ml conv-tab"><thead><tr><th>Quando</th><th>Cliente</th><th>🙋 Pergunta</th><th>🤖 Resposta</th><th>Agente</th><th>Modelo</th></tr></thead>
+    <tbody>${turnos.map(t => `<tr class="${t.agente === "bloqueado" ? "bloq" : ""}">
+      <td class="mono">${escHTML(quando(t.criado_em))}</td><td>${escHTML(t.cliente_nome || t.cliente_id || "")}</td>
+      <td class="conv-perg">${escHTML(limpo(t.pergunta).slice(0, 220))}</td>
+      <td class="conv-resp">${escHTML(limpo(t.resposta).slice(0, 220))}${limpo(t.resposta).length > 220 ? "…" : ""}</td>
+      <td>${t.agente === "bloqueado" ? "🛡️ bloqueado" : escHTML(NOME_AGENTE[t.agente] || t.agente || "")}</td>
+      <td class="mono">${escHTML(String(t.modelo || "").split(" (via")[0])}</td></tr>`).join("")
+      || `<tr><td colspan="6">Nenhuma pergunta ainda.</td></tr>`}</tbody></table></section>`);
   const b = $("#conv-atualizar"); if (b) b.onclick = () => abaConversas(tok);
 }
 /* ── 📞 SAC por voz (Whisper no Model Serving + ai_classify / ai_analyze_sentiment / ai_extract) ── */
@@ -824,7 +962,7 @@ async function abaVoz(tok) {
   const linhas = d.atendimentos || [];
   const podeGravar = !!(navigator.mediaDevices && window.MediaRecorder);
   aba(tok, `<section class="painel voz">
-    <h3>SAC por voz com <b>Whisper</b></h3>
+    <div class="voz-topo"><h3>SAC por voz com <b>Whisper</b></h3><button class="btn btn-borda btn-sm" id="voz-atualizar" title="Recarrega o histórico e as solicitações (inclusive as abertas pelo Assistente)">↻ Atualizar</button></div>
     <p class="assoc-legenda">Áudio → <b>Whisper</b> (endpoint de Model Serving) → <code>ai_classify</code>, <code>ai_analyze_sentiment</code> e <code>ai_extract</code> → tabela <code>atendimentos_voz</code> (também no Genie).</p>
     <div class="voz-blocos">
       <div class="voz-bloco"><h4>🎙️ Gravar agora</h4>
@@ -847,6 +985,7 @@ async function abaVoz(tok) {
     <tbody>${(sols.solicitacoes || []).map(sl => `<tr><td class="mono">${escHTML(sl.protocolo)}</td><td>${escHTML(sl.cliente_nome || "")}</td>
       <td class="mono">${escHTML(sl.pedido_id || "")}</td><td>${escHTML(sl.tipo || "")}</td><td>${escHTML(sl.status || "")}</td>
       <td>${escHTML(sl.prazo || "")}</td><td>${escHTML(String(sl.motivo || "").slice(0, 90))}</td></tr>`).join("") || `<tr><td colspan="7">Nenhuma solicitação ainda.</td></tr>`}</tbody></table></section>`);
+  const ba = $("#voz-atualizar"); if (ba) ba.onclick = () => abaVoz(tok);
   const sec = $(".voz");
   if (sec) {   // delegação: vale para o histórico e para os resultados que entram depois
     sec.addEventListener("click", e => { const b = e.target.closest("[data-voz-cadastrar]"); if (b) { e.preventDefault(); vozFormSAC(b); } });
@@ -946,20 +1085,47 @@ async function abaPrevisao(tok) {
     const corpo = Object.fromEntries(new FormData(f));
     ["historico_dias", "horizonte"].forEach(k => corpo[k] = Number(corpo[k]));
     if (corpo.filtro_tipo === "total") delete corpo.valor;
-    try { $("#fc-res").innerHTML = previsaoHTML(await api("/api/previsao", { json: corpo }), corpo); }
+    try { $("#fc-res").innerHTML = previsaoHTML(await api("/api/previsao", { json: corpo }), corpo); ligarDicaPrevisao($("#fc-res")); }
     catch (e) { $("#fc-res").innerHTML = `<div class="painel painel-erro"><b>Falhou</b><span>${escHTML(e.message)}</span></div>`; }
     b.disabled = false; b.innerHTML = "📈 Prever com ai_forecast";
   };
 }
+// passa o mouse no gráfico da previsão: linha-guia, ponto e a caixinha com data, valor e intervalo
+function ligarDicaPrevisao(raiz) {
+  const svg = raiz.querySelector(".fc-graf"); if (!svg) return;
+  const pts = JSON.parse(svg.dataset.pontos || "[]"), W = +svg.dataset.w, rec = svg.dataset.receita === "1", sem = svg.dataset.semana === "1";
+  const guia = svg.querySelector(".fc-guia"), ponto = svg.querySelector(".fc-ponto"), dica = raiz.querySelector(".fc-dica");
+  const fmt = v => rec ? reais(v) : numPT(Math.round(v));
+  const dataBR = d => { const dt = new Date(String(d).slice(0, 10) + "T12:00:00");
+    return (sem ? "semana de " : dt.toLocaleDateString("pt-BR", { weekday: "short" }) + ", ") + dt.toLocaleDateString("pt-BR"); };
+  svg.addEventListener("mousemove", e => {
+    const caixa = svg.getBoundingClientRect(), x = (e.clientX - caixa.left) * (W / caixa.width);
+    let k = 0; pts.forEach((p, i) => { if (Math.abs(p.x - x) < Math.abs(pts[k].x - x)) k = i; });
+    const p = pts[k]; if (!p) return;
+    guia.setAttribute("x1", p.x); guia.setAttribute("x2", p.x); ponto.setAttribute("cx", p.x); ponto.setAttribute("cy", p.y);
+    ponto.classList.toggle("prev", !!p.p);
+    [guia, ponto, dica].forEach(el => el.classList.remove("oculto"));
+    dica.innerHTML = `<b>${escHTML(dataBR(p.d))}</b><span>${p.p ? "Previsto" : p.h ? "Hoje até agora (parcial)" : "Real"}: <b>${fmt(p.v)}</b></span>`
+      + (p.p ? `<small>intervalo: ${fmt(p.lo)} a ${fmt(p.hi)}</small>` : "");
+    const px = p.x * caixa.width / W, py = p.y * caixa.height / +svg.viewBox.baseVal.height;
+    dica.style.left = Math.min(caixa.width - 190, Math.max(0, px + 12)) + "px"; dica.style.top = Math.max(0, py - 60) + "px";
+  });
+  svg.addEventListener("mouseleave", () => [guia, ponto, dica].forEach(el => el.classList.add("oculto")));
+}
 function previsaoHTML(r, par) {
   if (r.erro) return `<div class="painel painel-erro"><b>Não deu para prever</b><span>${escHTML(r.erro)}</span></div>`;
   const real = r.serie_real || [], prev = r.previsao || [];
+  const parcial = real.length && real[real.length - 1].parcial;   // hoje: dia incompleto, ponto à parte (fora da linha e das somas)
+  const completos = parcial ? real.slice(0, -1) : real;
   const ms = typeof r.ms === "object" ? (r.ms.serie || 0) + (r.ms.ai_forecast || 0) : (r.ms || 0);
   if (!real.length) return `<p class="assoc-legenda">Sem vendas no período escolhido.</p>`;
-  const W = 900, Hh = 300, M = { l: 64, r: 16, t: 14, b: 30 };
   const datas = [...real.map(x => x.data), ...prev.map(x => x.data)];
   const vals = [...real.map(x => +x.valor), ...prev.flatMap(x => [+x.valor, +(x.superior ?? x.valor), +(x.inferior ?? x.valor)])];
   const max = Math.max(...vals) * 1.08 || 1, min = Math.min(0, ...vals);
+  const ehReceita0 = (par.metrica || "receita") === "receita";
+  const rotuloY = t => ehReceita0 ? "R$ " + numPT(Math.round(t)) : numPT(Math.round(t));
+  // margem esquerda do tamanho do maior rótulo do eixo (números grandes não ficam cortados)
+  const W = 900, Hh = 300, M = { l: 16 + 7.2 * Math.max(...[0, .25, .5, .75, 1].map(t => rotuloY(min + t * (max - min)).length)), r: 16, t: 14, b: 30 };
   const X = i => M.l + (i / Math.max(1, datas.length - 1)) * (W - M.l - M.r);
   const Y = v => M.t + (1 - (v - min) / (max - min)) * (Hh - M.t - M.b);
   const ehReceita = (par.metrica || "receita") === "receita";
@@ -969,22 +1135,28 @@ function previsaoHTML(r, par) {
   const banda = prev.length ? `M${prev.map((x, k) => `${X(n0 + k).toFixed(1)},${Y(+(x.superior ?? x.valor)).toFixed(1)}`).join(" L")} L${prev.map((x, k) => [n0 + k, x]).reverse().map(([i, x]) => `${X(i).toFixed(1)},${Y(+(x.inferior ?? x.valor)).toFixed(1)}`).join(" L")} Z` : "";
   const ticks = [0, .25, .5, .75, 1].map(t => min + t * (max - min));
   const nx = Math.min(8, datas.length), passo = Math.max(1, Math.floor(datas.length / nx));
-  const somaPrev = prev.reduce((a, x) => a + (+x.valor || 0), 0), somaUlt = real.slice(-prev.length).reduce((a, x) => a + (+x.valor || 0), 0);
+  const somaPrev = prev.reduce((a, x) => a + (+x.valor || 0), 0), somaUlt = completos.slice(-prev.length).reduce((a, x) => a + (+x.valor || 0), 0);
   const varPct = somaUlt ? ((somaPrev / somaUlt - 1) * 100) : 0;
   const aviso = r.aviso ? `<div class="painel fc-aviso">⚠️ ${escHTML(r.aviso)}</div>` : "";
   return `${aviso}<div class="fc-kpis"><div><span>Previsto nos próximos ${prev.length} períodos</span><b>${fmt(somaPrev)}</b></div>
       <div><span>Mesmo nº de períodos anteriores</span><b>${fmt(somaUlt)}</b></div>
       <div><span>Variação</span><b class="${varPct >= 0 ? "pos" : "neg"}">${varPct >= 0 ? "+" : ""}${varPct.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</b></div>
       <div><span>Tempo (série + ai_forecast)</span><b>${(ms / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} s</b></div></div>
-    <svg class="fc-graf" viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Vendas reais e previstas">
-      ${ticks.map(t => `<line x1="${M.l}" x2="${W - M.r}" y1="${Y(t)}" y2="${Y(t)}" class="grade"/><text x="${M.l - 6}" y="${Y(t) + 4}" text-anchor="end">${escHTML(ehReceita ? "R$ " + numPT(Math.round(t)) : numPT(Math.round(t)))}</text>`).join("")}
+    <div class="fc-graf-caixa"><svg class="fc-graf" viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Vendas reais e previstas"
+      data-pontos="${escHTML(JSON.stringify(datas.map((d, i) => i < n0 ? { d, v: +real[i].valor, h: real[i].parcial ? 1 : 0, x: +X(i).toFixed(1), y: +Y(+real[i].valor).toFixed(1) }
+        : { d, v: +prev[i - n0].valor, lo: +(prev[i - n0].inferior ?? prev[i - n0].valor), hi: +(prev[i - n0].superior ?? prev[i - n0].valor), p: 1,
+            x: +X(i).toFixed(1), y: +Y(+prev[i - n0].valor).toFixed(1) })))}" data-w="${W}" data-receita="${ehReceita ? 1 : 0}"
+      data-semana="${par.granularidade === "semana" ? 1 : 0}" data-yt="${M.t}" data-yb="${Hh - M.b}">
+      ${ticks.map(t => `<line x1="${M.l}" x2="${W - M.r}" y1="${Y(t)}" y2="${Y(t)}" class="grade"/><text x="${M.l - 6}" y="${Y(t) + 4}" text-anchor="end">${escHTML(rotuloY(t))}</text>`).join("")}
       ${datas.map((d, i) => i % passo === 0 ? `<text x="${X(i)}" y="${Hh - 8}" text-anchor="middle">${escHTML(String(d).slice(5, 10).split("-").reverse().join("/"))}</text>` : "").join("")}
       ${banda ? `<path d="${banda}" class="banda"/>` : ""}
-      <path d="${lin(real.map((x, i) => [i, +x.valor]))}" class="real"/>
-      ${prev.length ? `<path d="${lin([[n0 - 1, +real[n0 - 1].valor], ...prev.map((x, k) => [n0 + k, +x.valor])])}" class="prev"/>` : ""}
+      <path d="${lin(completos.map((x, i) => [i, +x.valor]))}" class="real"/>
+      ${prev.length && completos.length ? `<path d="${lin([[completos.length - 1, +completos[completos.length - 1].valor], ...prev.map((x, k) => [n0 + k, +x.valor])])}" class="prev"/>` : ""}
+      ${parcial ? `<circle cx="${X(n0 - 1)}" cy="${Y(+real[n0 - 1].valor)}" r="4.5" class="fc-parcial"/>` : ""}
       <line x1="${X(n0 - 1)}" x2="${X(n0 - 1)}" y1="${M.t}" y2="${Hh - M.b}" class="hoje"/><text x="${X(n0 - 1) + 4}" y="${M.t + 10}" class="hoje-t">hoje</text>
-    </svg>
-    <p class="fc-leg"><span class="l-real"></span>Real <span class="l-prev"></span>Previsto (ai_forecast) <span class="l-banda"></span>Intervalo de previsão</p>
+      <line class="fc-guia oculto" y1="${M.t}" y2="${Hh - M.b}"/><circle class="fc-ponto oculto" r="4"/>
+    </svg><div class="fc-dica oculto"></div></div>
+    <p class="fc-leg"><span class="l-real"></span>Real <span class="l-prev"></span>Previsto (ai_forecast) <span class="l-banda"></span>Intervalo de previsão${parcial ? ` <span class="l-parcial"></span>Hoje (parcial: só as compras feitas até agora)` : ""}</p>
     <details class="fc-sql"><summary>SQL executado</summary><pre class="sql">${escHTML(r.sql || "")}</pre></details>`;
 }
 
@@ -1383,6 +1555,7 @@ async function enviarAoAssistente(msg, { anexo = null } = {}) {
     E.chat.push({ role: "assistant", content: r.resposta || "" });
     // o agente colocou produtos na sacola (ferramenta adicionar_a_sacola): adiciona de verdade e avisa
     (r.sacola || []).forEach((p, k) => addCarrinho(p, { qtd: p.quantidade || 1, aviso: k === (r.sacola.length - 1) }));
+    if (r.acao === "abrir_sacola") abrirGaveta();   // "quero finalizar a compra": mostra a sacola com o botão Finalizar pedido
     if (r.memoria && r.memoria.gravado) E.memoriaTotal = (E.memoriaTotal || 0) + 2;
   } catch (err) { pensando.remove(); addMsg("bot", "Não consegui responder agora: " + err.message); }
 }
@@ -1420,7 +1593,7 @@ $("#chat-form").onsubmit = async e => {
         const wav = await gravacaoParaWav(new Blob(partes, { type: rec.mimeType || "audio/webm" }));
         const url = URL.createObjectURL(wav);
         bolha.innerHTML = `<audio class="audio-msg" controls src="${url}"></audio>
-          <small class="transcricao"><span class="spin"></span> transcrevendo com o Whisper… (na primeira vez o endpoint pode levar alguns minutos para acordar)</small>`;
+          <small class="transcricao"><span class="spin"></span> transcrevendo com o Whisper…${E.marca.whisper_frio ? " (se o endpoint estava ocioso, pode levar alguns minutos para acordar)" : ""}</small>`;
         caixa();
         const fd = new FormData(); fd.append("audio", new File([wav], "pergunta.wav", { type: "audio/wav" }));
         const r = await apiForm("/api/voz/transcrever", fd);
@@ -1511,6 +1684,7 @@ async function esperarCatalogo() {
 function aplicarMarca() {
   const m = E.marca.marca || "Loja";
   $("#marca-nome").textContent = m;
+  const mp = $("#marca-perfis"); if (mp) mp.textContent = m;   // tela "Quem está comprando?"
   document.title = m + (E.marca.slogan ? " · " + E.marca.slogan : "");
 }
 async function boot() {

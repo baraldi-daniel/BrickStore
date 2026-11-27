@@ -916,3 +916,63 @@ body.admin .admin-toggle { opacity: 1; color: #FF5F46; }
 .pedido-sac small { display: block; margin-top: 2px; color: var(--ink2); }
 /* espaço entre o cabeçalho da página e o primeiro pedido */
 .pedidos-lista { padding-top: 28px; }
+
+.voz-topo { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.voz-topo h3 { margin: 0; }
+.conv-tab .conv-perg { font-weight: 600; min-width: 220px; }
+.conv-tab .conv-resp { color: var(--ink2); font-size: 13px; }
+
+/* 📈 dica ao passar o mouse no gráfico da previsão */
+.fc-graf-caixa { position: relative; }
+.fc-guia { stroke: #1B3139; stroke-width: 1; stroke-dasharray: 3 3; opacity: .5; }
+.fc-ponto { fill: #1B3139; stroke: #fff; stroke-width: 2; }
+.fc-ponto.prev { fill: #FF3621; }
+.fc-dica { position: absolute; pointer-events: none; background: #0B2026; color: #fff; border-radius: 8px; padding: 8px 10px;
+  font-size: 12px; display: grid; gap: 2px; min-width: 170px; box-shadow: 0 6px 18px rgba(0,0,0,.18); z-index: 2; }
+.fc-dica small { opacity: .75; }
+.fc-graf .oculto, .fc-dica.oculto { display: none; }
+.fc-parcial { fill: #fff; stroke: #1B3139; stroke-width: 2; }
+.fc-leg .l-parcial { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #1B3139; background: #fff; margin: 0 4px 0 12px; vertical-align: -1px; }
+
+/* 📊 Dados (admin) */
+.dados-grade { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
+@media (max-width: 1100px) { .dados-grade { grid-template-columns: 1fr; } }
+.dados-form { display: flex; gap: 8px; margin: 10px 0; }
+.dados-form input { flex: 1; padding: 11px 14px; border: 1px solid var(--oat2); border-radius: 10px; font: inherit; }
+.dados-sug { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.dados-sug .chip { font-size: 12px; cursor: pointer; }
+.dados-card { border: 1px solid var(--oat2); border-radius: 12px; padding: 14px 16px; margin-top: 12px; background: #fff; }
+.dados-q { font-weight: 700; margin-bottom: 8px; }
+.dados-texto { margin: 6px 0 10px; }
+.dados-tab-caixa { max-height: 340px; overflow: auto; margin: 8px 0; }
+.dados-tab td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.dados-graf { margin: 8px 0 12px; }
+.dados-graf-t { font-size: 12px; color: var(--ink2); margin: 0 0 6px; }
+.dados-barras { display: grid; gap: 6px; }
+.dados-barras .barra { display: grid; grid-template-columns: minmax(120px, 34%) 1fr auto; gap: 10px; align-items: center; font-size: 13px; }
+.dados-barras .rot { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dados-barras .dados-trilho { display: block; background: #F1EEE9; border-radius: 6px; height: 16px; overflow: hidden; }
+.dados-barras .enche { display: block; height: 100%; background: #FF3621; border-radius: 6px; min-width: 2px; }
+.dados-barras b { font-variant-numeric: tabular-nums; font-size: 12px; }
+.dados-svg { width: 100%; height: auto; }
+.dados-svg text { font-size: 11px; fill: var(--ink2); }
+.dados-svg .grade { stroke: #E8E3DC; }
+.dados-svg .real { fill: none; stroke: #FF3621; stroke-width: 2.2; }
+.dados-pt { fill: #FF3621; stroke: #fff; stroke-width: 1.5; }
+.dados-pizza { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.dados-pizza svg { width: 240px; height: auto; }
+.dados-pizza ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: 13px; }
+.dados-pizza i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+.abac-status { display: inline-block; padding: 6px 12px; border-radius: 999px; font-weight: 700; margin: 4px 0 8px; }
+.abac-status.on { background: rgba(255, 54, 33, .1); color: #B42318; }
+.abac-status.off { background: rgba(0, 169, 114, .12); color: #067647; }
+.abac-cols { list-style: none; padding: 0; margin: 6px 0 12px; font-size: 13px; display: grid; gap: 4px; }
+.abac-amostra td { font-size: 12px; }
+.abac-selo { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; margin-bottom: 6px; }
+.abac-selo.on { background: rgba(255, 54, 33, .1); color: #B42318; }
+.abac-selo.off { background: rgba(0, 169, 114, .12); color: #067647; }
+.abac-amostra { table-layout: fixed; width: 100%; }
+.abac-amostra td, .abac-amostra th { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.abac-amostra th:first-child, .abac-amostra td:first-child { width: 72px; }
+.abac-amostra th:nth-child(2), .abac-amostra td:nth-child(2) { width: 118px; text-overflow: clip; }
+.abac-amostra td { font-size: 11px; }

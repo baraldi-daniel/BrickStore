@@ -49,7 +49,7 @@ CFG = {"catalog": "brickstore", "schema": "varejo", "app_name": "brickstore", "m
        "roteador_destino_a": "system.ai.llama-4-maverick", "roteador_destino_a_pct": "50",
        "roteador_destino_b": "system.ai.qwen3-next-80b-a3b-instruct", "roteador_destino_b_pct": "50",
        "roteador_fallback": "system.ai.gpt-oss-120b", "enterprise": "false",
-       "whisper_modelo": "openai/whisper-large-v3-turbo", "whisper_compute": "CPU"}
+       "whisper_modelo": "openai/whisper-large-v3-turbo", "whisper_compute": "CPU", "whisper_sempre_ligado": "true"}
 CFG.update({k: v for k, v in _ler_config(f"{REPO_FS}/config.yaml").items() if v != "" or k == "warehouse_id"})
 
 # Widgets: mostram o config.yaml e permitem trocar um valor só nesta execução
@@ -73,6 +73,7 @@ LLM_JUIZ = CFG["llm_juiz"]
 ENTERPRISE = str(CFG["enterprise"]).strip().lower() in ("true", "sim", "yes", "1")   # extras do workspace corporativo
 WHISPER_MODELO = CFG["whisper_modelo"]
 WHISPER_COMPUTE = (CFG["whisper_compute"] or "CPU").strip().upper()
+WHISPER_SEMPRE_LIGADO = str(CFG["whisper_sempre_ligado"]).strip().lower() in ("true", "sim", "yes", "1")   # False = scale to zero
 WHISPER_ENDPOINT_NOME = f"{APP_NAME}-whisper"
 WAREHOUSE_ID_CFG = CFG["warehouse_id"]
 ROTEADOR = {"a": CFG["roteador_destino_a"], "a_pct": int(CFG["roteador_destino_a_pct"]),

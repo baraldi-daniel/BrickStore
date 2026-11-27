@@ -334,3 +334,120 @@ def recalcular_recomendacoes() -> dict:
     S.sql(sql_regras(S.CATALOG, S.SCHEMA, pedidos=tabela("pedidos"), itens=tabela("itens_pedido")), timeout_s=600)
     CATALOGO.carregar()
     return {"segundos": round(time.time() - t0, 1), "regras": sum(len(v) for v in CATALOGO.regras.values())}
+
+
+# ───────────── 📊 Dados (modo admin): perguntas ao Genie + acesso a dados sensíveis por ABAC ─────────────
+# dados_perguntar(pergunta)        → Genie responde (texto + SQL + tabela); a tela desenha o gráfico quando pedido
+# dados_acesso()                   → as colunas sensíveis estão com a governed tag (🔒 mascaradas) ou sem ela (🔓 liberadas)?
+# dados_alterar_acesso(liberar, t) → TIRA (liberar) ou PÕE (revogar) a governed tag nas colunas; a policy ABAC da etapa 05d
+#                                    (MATCH COLUMNS has_tag) mascara tudo menos a penúltima letra das colunas COM a tag.
+# A tag é posta/tirada pelo JOB da etapa 05d, que roda como quem instalou (dono da tabela e da governed tag); o App só
+# dispara o job (CAN_MANAGE_RUN): sem consentimento extra nem permissão dada pela interface.
+import json as _json
+import os as _os
+import re as _re
+import time as _time
+
+
+
+def _abac_cfg() -> dict:
+    bruto = (_os.environ.get("NB_ABAC") or "").strip()
+    try:
+        return _json.loads(bruto) if bruto.startswith("{") else {}
+    except Exception:
+        return {}
+
+
+ABAC = _abac_cfg()
+RX_GRAFICO = _re.compile(r"gr[aá]fic|chart|plot|visualiz|barras|pizza|rosca|linha do tempo|em linha", _re.I)
+
+
+def abac_disponivel() -> bool:
+    return bool(ABAC.get("tag") and ABAC.get("colunas"))
+
+
+def _abac_colunas() -> list[tuple[str, str]]:
+    return [tuple(c.split(".", 1)) for c in ABAC.get("colunas") or []]
+
+
+def dados_acesso() -> dict:
+    if not abac_disponivel():
+        return {"disponivel": False, "motivo": "ABAC não instalado neste workspace (etapa 05d_dados_sensiveis)."}
+    tag = ABAC["tag"]
+    linhas = S.sql(f"""SELECT table_name, column_name FROM {S.CATALOG}.information_schema.column_tags
+                       WHERE schema_name = :s AND tag_name = :t""", {"s": S.SCHEMA, "t": tag})
+    com_tag = {(l["table_name"], l["column_name"]) for l in linhas}
+    cols = [{"coluna": f"{t}.{c}", "protegida": (t, c) in com_tag} for t, c in _abac_colunas()]
+    amostra = []
+    try:   # o efeito na hora: como o App (e o Genie) enxergam os clientes agora
+        amostra = S.sql(f"SELECT cliente_id, nome, email FROM {S.fq('clientes')} ORDER BY cliente_id LIMIT 3")
+    except Exception as e:
+        log.warning("abac: amostra falhou: %s", str(e)[:160])
+    return {"disponivel": True, "mascarado": all(c["protegida"] for c in cols), "colunas": cols, "tag": tag,
+            "policy": ABAC.get("policy"), "funcao": ABAC.get("funcao"), "amostra": amostra}
+
+
+def _sql_como(w, sql: str) -> None:
+    r = w.statement_execution.execute_statement(warehouse_id=S.warehouse_id(), statement=sql, wait_timeout="30s")
+    inicio = _time.time()
+    while r.status and r.status.state and r.status.state.value in ("PENDING", "RUNNING") and _time.time() - inicio < 60:
+        _time.sleep(1)
+        r = w.statement_execution.get_statement(r.statement_id)
+    if r.status and r.status.state and r.status.state.value != "SUCCEEDED":
+        raise RuntimeError((r.status.error.message if r.status.error else r.status.state.value)[:300])
+
+
+def _comandos_acesso(liberar: bool) -> list[str]:
+    tag = ABAC["tag"]
+    valor = f"'{tag}' = '{ABAC['valor']}'" if ABAC.get("valor") else f"'{tag}'"
+    return [f"ALTER TABLE {S.fq(t)} ALTER COLUMN {c} " + (f"UNSET TAGS ('{tag}')" if liberar else f"SET TAGS ({valor})")
+            for t, c in _abac_colunas()]
+
+
+def dados_alterar_acesso(liberar: bool, token_usuario: str | None = None) -> dict:
+    """Liberar = tira a governed tag; revogar = põe. Quem executa é o JOB da etapa 05d (roda como quem instalou: dono da
+    tabela e da governed tag); o App só DISPARA (CAN_MANAGE_RUN) e a tela acompanha em dados_execucao(run_id).
+    Sem o job (instalação antiga), tenta na hora com o próprio service principal."""
+    if not abac_disponivel():
+        raise RuntimeError("ABAC não instalado neste workspace (etapa 05d_dados_sensiveis).")
+    comandos = _comandos_acesso(liberar)
+    if ABAC.get("job_id"):
+        r = S.ws().api_client.do("POST", "/api/2.2/jobs/run-now", body={
+            "job_id": int(ABAC["job_id"]), "job_parameters": {"liberar": "true" if liberar else "false"}})
+        return {"run_id": r["run_id"], "liberar": liberar, "sql": comandos}
+    try:   # reserva: o próprio App (precisa de ASSIGN na governed tag, que só se dá pela interface)
+        for cmd in comandos:
+            _sql_como(S.ws(), cmd)
+        return {"fim": True, "ok": True, "executado_por": "service principal do App", "sql": comandos, **dados_acesso()}
+    except Exception as e:
+        raise RuntimeError("Não consegui " + ("liberar" if liberar else "revogar") + f" o acesso: {str(e)[:220]}. "
+                           "Rode de novo a etapa setup/05d_dados_sensiveis (ela cria o job de acesso) e depois a setup/06_app.")
+
+
+def dados_execucao(run_id: int, liberar: bool) -> dict:
+    """Andamento do job de acesso; quando termina, devolve o estado novo das colunas (e a amostra mascarada ou não)."""
+    r = S.ws().api_client.do("GET", "/api/2.2/jobs/runs/get", query={"run_id": int(run_id)})
+    estado = r.get("state") or {}
+    base = {"run_id": run_id, "job_link": r.get("run_page_url") or "", "sql": _comandos_acesso(liberar),
+            "executado_por": f"job {ABAC.get('job_id')} (como quem instalou)",
+            "ms": max(0, (r.get("end_time") or 0) - (r.get("start_time") or 0)) if r.get("end_time") else None}
+    if estado.get("life_cycle_state") not in ("TERMINATED", "SKIPPED", "INTERNAL_ERROR"):
+        return {**base, "fim": False, "fase": estado.get("life_cycle_state") or "PENDING"}
+    if estado.get("result_state") != "SUCCESS":
+        return {**base, "fim": True, "ok": False,
+                "erro": f"o job terminou com {estado.get('result_state') or estado.get('life_cycle_state')}: "
+                        f"{(estado.get('state_message') or '')[:200]}"}
+    return {**base, "fim": True, "ok": True, **dados_acesso()}
+
+
+def dados_perguntar(pergunta: str) -> dict:
+    t0 = _time.perf_counter()
+    r = S.perguntar_genie(pergunta)
+    r["ms"] = round((_time.perf_counter() - t0) * 1000)
+    r["pediu_grafico"] = bool(RX_GRAFICO.search(pergunta))
+    if abac_disponivel():
+        try:
+            r["mascarado"] = dados_acesso()["mascarado"]
+        except Exception:
+            r["mascarado"] = None
+    return r

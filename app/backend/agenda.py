@@ -98,6 +98,44 @@ def _escopos(token: str) -> str:
         return "?"
 
 
+FUSO = "America/Sao_Paulo"
+
+
+def _argumentos(esquema: dict, ev: dict) -> dict:
+    """Argumentos do evento no formato do esquema da ferramenta (nomes e tipos variam entre versões do conector).
+    Data em texto → horário 09:00–10:00 (RFC 3339, fuso de Brasília); data em objeto → evento de dia inteiro {date}."""
+    props = esquema.get("properties") or {}
+    obrig = set(esquema.get("required") or [])
+
+    def chave(*opcoes):
+        return next((k for k in props if k.lower().replace("_", "") in opcoes), None)
+
+    def quando(k, dia, hora):
+        p = props.get(k) or {}
+        sub = p.get("properties") or {}
+        if p.get("type") == "object" or sub:
+            if "date" in sub or not sub:
+                return {"date": dia}
+            return {"dateTime": f"{dia}T{hora}:00-03:00", "timeZone": FUSO}
+        return f"{dia}T{hora}:00-03:00"
+
+    args = {}
+    k = chave("summary", "title", "name", "eventtitle");          args[k or "summary"] = ev["titulo"]
+    k = chave("description", "details", "body", "notes")
+    if k or not props: args[k or "description"] = ev["descricao"]
+    ki, kf = chave("start", "starttime", "startdatetime", "startdate"), chave("end", "endtime", "enddatetime", "enddate")
+    texto = not (props.get(ki or "", {}).get("type") == "object" or props.get(ki or "", {}).get("properties"))
+    args[ki or "start"] = quando(ki or "start", ev["inicio"], "09")
+    args[kf or "end"] = quando(kf or "end", ev["inicio"] if texto else ev["fim"], "10")
+    k = chave("calendarid", "calendar")
+    if k: args[k] = "primary"
+    k = chave("timezone", "tz")
+    if k: args[k] = FUSO
+    for k in obrig - set(args):   # obrigatório que não sabemos preencher: avisa no erro
+        log.warning("calendar: argumento obrigatório sem valor: %s", k)
+    return args
+
+
 async def _mcp_calendar(token: str, ev: dict) -> dict:
     """Chama calendar_event_create no MCP gerenciado do Google Calendar (Unity Gateway), como o usuário."""
     url = f"{S.ws().config.host.rstrip('/')}/ai-gateway/mcp-services/{CONECTOR}"
@@ -117,9 +155,17 @@ async def _mcp_calendar(token: str, ev: dict) -> dict:
         if r.headers.get("mcp-session-id"):
             cab["mcp-session-id"] = r.headers["mcp-session-id"]
         await c.post(url, headers=cab, json={"jsonrpc": "2.0", "method": "notifications/initialized"})
-        r = await c.post(url, headers=cab, json={"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
-            "name": "calendar_event_create",
-            "arguments": {"summary": ev["titulo"], "description": ev["descricao"], "start": ev["inicio"], "end": ev["fim"]}}})
+        # lê o esquema da ferramenta no próprio conector e monta os argumentos no formato que ela pede
+        r = await c.post(url, headers=cab, json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        r.raise_for_status()
+        ferramentas = (corpo(r).get("result") or {}).get("tools") or []
+        nomes = [f.get("name", "") for f in ferramentas]
+        ferr = next((f for f in ferramentas if f.get("name") == "calendar_event_create"), None) or next(
+            (f for f in ferramentas if "event" in f.get("name", "") and any(k in f["name"] for k in ("create", "insert", "add"))), None)
+        if not ferr:
+            raise RuntimeError(f"o conector não tem ferramenta para criar evento (ferramentas: {', '.join(nomes)[:200]})")
+        r = await c.post(url, headers=cab, json={"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
+            "name": ferr["name"], "arguments": _argumentos(ferr.get("inputSchema") or {}, ev)}})
         r.raise_for_status()
         res = corpo(r)
     if "error" in res:
@@ -169,7 +215,7 @@ async def agendar_entrega(pedido_id: str, cliente_id: str | None, token_usuario:
                 base["aviso"] = ("Conecte seu Google Calendar: AI Gateway → MCP → Google Calendar → Connect. "
                                  "Por enquanto, use o link abaixo.")
             else:
-                base["aviso"] = "Não consegui criar direto na sua agenda agora. Use o link abaixo."
+                base["aviso"] = f"Não consegui criar direto na sua agenda ({msg[:160]}). Use o link abaixo."
             base["erro_mcp"] = str(e)[:200]
     return {**base, "criado": False, "via": "link"}
 

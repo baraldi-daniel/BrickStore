@@ -40,7 +40,8 @@ roteador_fallback: system.ai.gpt-oss-120b
 # Extras do workspace corporativo (veja docs/ENTERPRISE.md)
 enterprise: false            # true = liga o SAC por voz com Whisper (endpoint de Model Serving próprio)
 whisper_modelo: openai/whisper-large-v3-turbo   # modelo do Hugging Face servido no endpoint <app_name>-whisper
-whisper_compute: CPU         # CPU (padrão, mais barato) ou GPU_SMALL (mais rápido em áudios longos). Scale to zero nos dois
+whisper_compute: CPU         # CPU (padrão, mais barato) ou GPU_SMALL (mais rápido em áudios longos)
+whisper_sempre_ligado: true  # true = endpoint sempre pronto (sem esperar acordar; cobra enquanto existir). false = scale to zero (mais barato; a 1ª fala depois de ocioso demora minutos)
 
 # Infraestrutura
 vs_endpoint: brickstore_vs   # criado se não existir; só se o workspace NÃO permitir criar (limite de 1) reaproveita um existente

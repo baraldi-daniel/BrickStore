@@ -125,6 +125,10 @@ env:
     value: "{RECOMENDADOR}"
   - name: NB_WHISPER
     value: "{WHISPER_EP}"
+  - name: NB_ABAC
+    value: '{(estado_ler("abac") or "").replace("'", "")}'
+  - name: NB_WHISPER_SEMPRE_LIGADO
+    value: "{'true' if WHISPER_SEMPRE_LIGADO else 'false'}"
   - name: NB_WAREHOUSE_ID
     valueFrom: sql-warehouse
 """
@@ -217,6 +221,17 @@ for g in [f"GRANT USE CATALOG ON CATALOG {CATALOG} TO `{SP}`",
           f"GRANT READ VOLUME, WRITE VOLUME ON VOLUME {CATALOG}.{SCHEMA}.documentos TO `{SP}`"]:
     spark.sql(g)
     print("✓", g)
+# ABAC (etapa 05d): o App dispara o job que põe/tira a tag como quem instalou → só precisa de CAN_MANAGE_RUN no job
+import json as _json_abac
+_abac = estado_ler("abac") or ""
+_job_abac = _json_abac.loads(_abac).get("job_id") if _abac.startswith("{") else None
+if _job_abac:
+    try:
+        w.api_client.do("PATCH", f"/api/2.0/permissions/jobs/{_job_abac}", body={"access_control_list": [
+            {"service_principal_name": SP, "permission_level": "CAN_MANAGE_RUN"}]})
+        print(f"✓ App pode disparar o job {_job_abac} (acesso a dados sensíveis)")
+    except Exception as e:
+        print("   ⚠️ permissão no job de acesso a dados sensíveis:", str(e)[:160])
 
 if LAKEBASE_PROJETO:   # Lakebase: SP lê/grava o schema loja no Postgres e lê o catálogo registrado no UC
     import psycopg

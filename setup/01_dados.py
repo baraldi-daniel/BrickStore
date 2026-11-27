@@ -139,8 +139,37 @@ for fk in MANIFESTO["fks"]:
     except Exception:
         pass   # tabela ainda não existe (primeira instalação)
 
+# 📅 As datas dos Parquet são fixas (os dados foram gerados uma vez). Na carga, pedidos, navegação e cadastros andam o
+# MESMO número de dias, para o último pedido cair em ONTEM: a previsão (ai_forecast) não vê "dias sem venda" que são só
+# falta de dado, e os prazos (troca em 30 dias, entrega prevista, "em transporte") e os "mais vendidos da semana" ficam atuais.
+# As datas de cadastro dos PRODUTOS não mudam (a tabela alimenta o Vector Search; mexer nela ressincronizaria o índice).
+_fim_dados = pd.read_parquet(f"{DADOS}/pedidos.parquet", columns=["data_pedido"])["data_pedido"].max().normalize()
+DESLOCAR_DIAS = max(0, ((pd.Timestamp.today().normalize() - pd.Timedelta(days=1)) - _fim_dados).days)
+COLUNAS_DATA = {"pedidos": ["data_pedido"], "eventos_navegacao": ["data_hora"], "clientes": ["data_cadastro"]}
+
+
+def deslocar_datas(pdf, tabela):
+    for c in COLUNAS_DATA.get(tabela, []):
+        if DESLOCAR_DIAS and c in pdf.columns:
+            if pd.api.types.is_datetime64_any_dtype(pdf[c]):
+                pdf[c] = pdf[c] + pd.Timedelta(days=DESLOCAR_DIAS)
+            else:   # texto 'AAAA-MM-DD'
+                d = pd.to_datetime(pdf[c], errors="coerce") + pd.Timedelta(days=DESLOCAR_DIAS)
+                pdf[c] = d.dt.strftime("%Y-%m-%d").where(d.notna(), pdf[c])
+    return pdf
+
+
+# reinstalação: tira a tag de dados sensíveis (etapa 05d) antes de regravar clientes; a 05d põe de volta
+for _col in ("nome", "email"):
+    try:
+        spark.sql(f"ALTER TABLE {fq('clientes')} ALTER COLUMN {_col} UNSET TAGS ('dados_sensiveis')")
+    except Exception:
+        pass   # primeira instalação ou sem a tag
+
+print(f"📅 datas dos dados deslocadas em {DESLOCAR_DIAS} dia(s): o último pedido fica em "
+      f"{(_fim_dados + pd.Timedelta(days=DESLOCAR_DIAS)).date():%d/%m/%Y}")
 for tabela, meta in MANIFESTO["tabelas"].items():
-    pdf = trocar_marca(pd.read_parquet(f"{DADOS}/{tabela}.parquet"))
+    pdf = deslocar_datas(trocar_marca(pd.read_parquet(f"{DADOS}/{tabela}.parquet")), tabela)
     gravar(pdf, tabela, meta["comentario"], duplos=meta["duplos"], inteiros=meta["inteiros"],
            nulos_texto=meta["nulos_texto"], cdf=meta["cdf"])
     print(f"✓ {fq(tabela):<45} {len(pdf):>9,} linhas")

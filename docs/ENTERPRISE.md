@@ -41,8 +41,8 @@ transcreve as ligações; depois as funções de IA estruturam cada atendimento:
 
 **Como ligar:** no `config.yaml`, `enterprise: true` e rode o `INSTALAR`.
 - Etapa **2b** (`setup/02b_whisper`): baixa o modelo (`whisper_modelo`, padrão `openai/whisper-large-v3-turbo`) do
-  Hugging Face, registra em `<catalog>.<schema>.whisper` e publica o endpoint `<app_name>-whisper` em **CPU** com
-  **scale to zero**, sem esperar (ele sobe enquanto as outras etapas rodam).
+  Hugging Face, registra em `<catalog>.<schema>.whisper` e publica o endpoint `<app_name>-whisper` em **CPU**,
+  **sempre ligado** (`whisper_sempre_ligado: true`), sem esperar (ele sobe enquanto as outras etapas rodam).
 - Etapa **9** (`setup/05a_sac_voz`): espera o endpoint ficar pronto, transcreve as 6 ligações de `audios_sac/` e cria
   `atendimentos_voz` (que o Genie passa a usar).
 - Roda em **CPU** (padrão). Para áudios longos dá para usar `whisper_compute: GPU_SMALL`, se o workspace tiver GPU no
@@ -65,9 +65,11 @@ SELECT arquivo, fonte_transcricao, categoria, sentimento, pedido_id, status_pedi
 FROM <catalog>.<schema>.atendimentos_voz ORDER BY processado_em DESC;
 ```
 
-**Custo:** o endpoint tem *scale to zero*: sem uso ele desliga e não cobra compute; a primeira chamada depois disso
-demora alguns minutos (o App avisa para tentar de novo). Cobra enquanto está ligado (o tempo de uso mais o período
-ocioso até desligar). O padrão já é CPU, o mais barato; para gastar ainda menos, `whisper_modelo: openai/whisper-small`
+**Custo:** por padrão o endpoint fica **sempre ligado** (`whisper_sempre_ligado: true`), para a fala transcrever na hora,
+sem esperar o endpoint acordar; ele cobra compute enquanto existir, mesmo sem uso. Para gastar menos, use
+`whisper_sempre_ligado: false` (*scale to zero*): sem uso ele desliga e não cobra, mas a primeira fala depois disso
+espera alguns minutos (o App avisa). Rodar o `INSTALAR` (ou só o `setup/02b_whisper`) de novo aplica a troca no endpoint
+que já existe. O padrão já é CPU, o mais barato; para gastar ainda menos, `whisper_modelo: openai/whisper-small`
 (menor, porém erra mais em português); para não gastar nada, `enterprise: false`. O `99_limpar_ambiente` apaga o endpoint.
 
 ---

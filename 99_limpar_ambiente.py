@@ -20,7 +20,8 @@
 # MAGIC | 4 | Genie "<Marca> · Genie de Dados" (padrão "BrickStore · Genie de Dados") |
 # MAGIC | 5 | Dashboard "AI Gateway Usage Analytics" |
 # MAGIC | 6 | Lakebase: synced tables `lb_produtos` / `lb_recomendacoes`, catálogo registrado `<catalog>_loja` e **todos** os projetos Lakebase do lab (`<app_name>`, `<app_name>-2`…), apagados de vez (sem lixeira) |
-# MAGIC | 7 | Schema `catalog.schema` inteiro (tabelas, views, volumes) com `CASCADE` |
+# MAGIC | 7 | Policy ABAC `mascara_dados_sensiveis` do schema (a governed tag `dados_sensiveis` fica: ela é da conta e pode servir a outros labs) |
+# MAGIC | 8 | Schema `catalog.schema` inteiro (tabelas, views, volumes) com `CASCADE` |
 # MAGIC
 # MAGIC > ⚠️ **Ação destrutiva e irreversível.** Nada é apagado enquanto o widget **`confirmar`** não estiver em
 # MAGIC > **`sim`**. O **catálogo não é apagado** (só o schema do lab).
@@ -101,6 +102,10 @@ if APAGAR_VS:   # só o endpoint do lab (config.yaml → vs_endpoint) e só se f
 _genie = estado_ler("genie_space_id")   # só o Genie criado por esta instalação (não outro com o mesmo título)
 if _genie:
     tentar(f"Genie {_genie}", lambda: w.api_client.do("DELETE", f"/api/2.0/genie/spaces/{_genie}"))
+
+# ABAC (etapa 05d): a policy do schema (a governed tag é da conta; fica para não afetar outros labs)
+tentar("policy ABAC mascara_dados_sensiveis",
+       lambda: spark.sql(f"DROP POLICY IF EXISTS mascara_dados_sensiveis ON SCHEMA {CATALOG}.{SCHEMA}"))
 
 for d in w.lakeview.list():
     if d.display_name == "AI Gateway Usage Analytics" and (d.parent_path or "").rstrip("/") == f"/Users/{USUARIO}":
