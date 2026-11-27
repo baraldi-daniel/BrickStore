@@ -976,3 +976,29 @@ body.admin .admin-toggle { opacity: 1; color: #FF5F46; }
 .abac-amostra th:first-child, .abac-amostra td:first-child { width: 72px; }
 .abac-amostra th:nth-child(2), .abac-amostra td:nth-child(2) { width: 118px; text-overflow: clip; }
 .abac-amostra td { font-size: 11px; }
+
+/* 📊 Dados como chat: caixa de altura fixa, rola por dentro, pergunta presa embaixo */
+.dados-grade { align-items: start; }
+.dados-chat { display: flex; flex-direction: column; height: calc(100vh - 250px); min-height: 520px; padding: 0 !important; overflow: hidden; }
+.dados-cab { padding: 16px 20px 10px; border-bottom: 1px solid var(--oat2); display: grid; gap: 2px; }
+.dados-cab h3 { margin: 0; }
+.dados-msgs { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; background: #FAF8F5; scroll-behavior: smooth; }
+.dados-vazio { margin: auto 0; display: grid; gap: 10px; color: var(--ink2); }
+.dados-sug-ini { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.dados-sug-linha { display: flex; gap: 6px; overflow-x: auto; padding: 8px 16px 0; border-top: 1px solid var(--oat2); scrollbar-width: thin; }
+.dados-sug-linha .chip, .dados-sug-ini .chip { white-space: nowrap; font-size: 12px; cursor: pointer; }
+.dados-form { margin: 0; padding: 10px 16px 14px; background: #fff; }
+.dados-u { align-self: flex-end; max-width: 75%; background: #1B3139; color: #fff; padding: 9px 13px; border-radius: 14px 14px 4px 14px; font-size: 14px; }
+.dados-b { align-self: stretch; background: #fff; border: 1px solid var(--oat2); border-radius: 14px 14px 14px 4px; padding: 12px 14px; }
+.dados-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--ink2); margin-bottom: 4px; }
+.dados-meta .abac-selo { margin: 0; }
+.dados-texto { font-size: 14px; margin: 4px 0; }
+.dados-texto p, .dados-texto ul { margin: 2px 0; }
+.dados-texto.curto { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.dados-mais { font-size: 12px; margin-bottom: 4px; }
+.dados-vistas { display: inline-flex; gap: 2px; background: #F1EEE9; border-radius: 9px; padding: 3px; margin: 8px 0 10px; }
+.dados-vistas button { border: 0; background: transparent; padding: 5px 11px; border-radius: 7px; font: inherit; font-size: 12px; font-weight: 600; color: var(--ink2); cursor: pointer; }
+.dados-vistas button.sel { background: #fff; color: #1B3139; box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
+.dados-vista .dados-tab-caixa { max-height: 300px; margin: 0; }
+.dados-vista pre.sql { max-height: 260px; overflow: auto; margin: 0; }
+.dados-acesso { position: sticky; top: 84px; }

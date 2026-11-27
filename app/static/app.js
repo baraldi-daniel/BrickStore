@@ -19,7 +19,7 @@ const E = {
   cache: {},          // produto_id → produto (alimentado por todas as respostas)
   tok: 0,             // token da navegação atual (descarta respostas atrasadas)
   chat: [], anexo: null,
-  admin: localStorage.getItem("bm_admin") === "1",   // 🛠️ modo admin: mostra o Estúdio (dados de todos os clientes)
+  admin: localStorage.getItem("bm_admin") === "1",   // modo admin: mostra o Estúdio (dados de todos os clientes)
 };
 
 const LOGO_SVG = `<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4 28 10.5 16 17 4 10.5Z" fill="#FF3621"/><path d="M4 15.5 16 22 28 15.5" fill="none" stroke="#FF5F46" stroke-width="3.2" stroke-linejoin="round"/><path d="M4 21.2 16 27.7 28 21.2" fill="none" stroke="#FF3621" stroke-width="3.2" stroke-linejoin="round" opacity=".7"/></svg>`;
@@ -89,7 +89,7 @@ function toast(html, ms = 4200, classe = "") {
   return t;
 }
 const dataEntrega = iso => { const d = new Date(iso + "T12:00:00"); return isNaN(d) ? iso : d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }); };
-const botaoAgenda = pid => `<button class="btn btn-agenda" data-agendar="${escHTML(pid)}">📅 Adicionar a chegada à minha agenda</button>`;
+const botaoAgenda = pid => `<button class="btn btn-agenda" data-agendar="${escHTML(pid)}">Adicionar a chegada à minha agenda</button>`;
 async function agendarEntrega(pid, botao) {
   if (!E.perfil || !E.perfil.cliente_id) { telaPerfis(); return; }
   const txt = botao ? botao.innerHTML : "";
@@ -98,14 +98,14 @@ async function agendarEntrega(pid, botao) {
     const r = await api("/api/agenda/entrega", { json: { pedido_id: pid, cliente_id: E.perfil.cliente_id } });
     if (r.erro) throw new Error(r.erro);
     toast(agendaHTML(r), 15000, r.criado ? "sucesso" : "");
-    if (botao) { botao.innerHTML = r.criado ? "✅ Na sua agenda" : txt; botao.disabled = !!r.criado; }
+    if (botao) { botao.innerHTML = r.criado ? "Na sua agenda" : txt; botao.disabled = !!r.criado; }
   } catch (e) { toastErro(e); if (botao) { botao.disabled = false; botao.innerHTML = txt; } }
 }
 function agendaHTML(r) {
   const quando = dataEntrega(r.previsao_entrega);
-  if (r.criado) return `<div class="toast-txt agenda-ok"><b>📅 Evento criado no seu Google Agenda</b><span>«${escHTML(r.titulo)}» em ${escHTML(quando)} · via ${escHTML(r.via)}</span>
+  if (r.criado) return `<div class="toast-txt agenda-ok"><b>Evento criado no seu Google Agenda</b><span>«${escHTML(r.titulo)}» em ${escHTML(quando)} · via ${escHTML(r.via)}</span>
     ${r.evento_link ? `<a class="btn btn-sm" href="${escHTML(r.evento_link)}" target="_blank" rel="noopener">Abrir o evento</a>` : ""}</div>`;
-  return `<div class="toast-txt"><b>📅 Chegada prevista: ${escHTML(quando)}</b><span>${escHTML(r.aviso || "Adicione o lembrete à sua agenda:")}</span>
+  return `<div class="toast-txt"><b>Chegada prevista: ${escHTML(quando)}</b><span>${escHTML(r.aviso || "Adicione o lembrete à sua agenda:")}</span>
     <div class="agenda-acoes"><a class="btn btn-sm btn-lava" href="${escHTML(r.link_google)}" target="_blank" rel="noopener">Google Agenda</a>
     <a class="btn btn-sm" href="${escHTML(r.ics_url)}">Baixar .ics</a></div></div>`;
 }
@@ -295,8 +295,8 @@ async function finalizarPedido() {
     E.carrinho = []; salvarCarrinho(); fecharGaveta();
     const sug = reg(r.sugestoes || []).slice(0, 3);
     toast(`<div class="toast-pedido"><div class="tp-cab"><span class="ok-bolinha">✓</span><div><b>Pedido ${escHTML(r.pedido_id)} confirmado</b><span>Total ${reais(r.valor_total)} · acompanhe em Meus pedidos</span></div></div>
-      ${r.previsao_entrega ? `<p class="tp-entrega">🚚 Chega ${escHTML(dataEntrega(r.previsao_entrega))}</p>` + (r.agenda && r.agenda.criado
-        ? `<p class="tp-agenda-ok">📅 Já está na sua agenda${r.agenda.evento_link ? ` · <a href="${escHTML(r.agenda.evento_link)}" target="_blank" rel="noopener">abrir o evento</a>` : ""}</p>`
+      ${r.previsao_entrega ? `<p class="tp-entrega">Chega ${escHTML(dataEntrega(r.previsao_entrega))}</p>` + (r.agenda && r.agenda.criado
+        ? `<p class="tp-agenda-ok">Já está na sua agenda${r.agenda.evento_link ? ` · <a href="${escHTML(r.agenda.evento_link)}" target="_blank" rel="noopener">abrir o evento</a>` : ""}</p>`
         : botaoAgenda(r.pedido_id)) : ""}
       ${sug.length ? `<p class="tp-sug">Quem comprou também levou</p><div class="tp-lista">${sug.map(p => miniProdutoHTML(p)).join("")}</div>` : ""}</div>`, 15000, "sucesso");
   } catch (e) { toastErro(e); renderGaveta(); }
@@ -306,7 +306,7 @@ async function finalizarPedido() {
 function avatarHTML(p, tam = "") {
   return `<span class="avatar ${tam}" style="--cor:${hexOK(p?.cor, "#7a8792")}">${escHTML(iniciais(p?.apelido || p?.nome))}</span>`;
 }
-/* ───────────── 🛠️ modo admin ───────────── */
+/* ───────────── modo admin ───────────── */
 function aplicarAdmin() {
   document.body.classList.toggle("admin", E.admin);
   const cb = $("#modo-admin"); if (cb) cb.checked = E.admin;
@@ -616,8 +616,8 @@ function pedidoHTML(p) {
       <span class="status ${STATUS_CLASSE[p.status] || ""}">${escHTML(p.status || "")}</span></header>
     <div class="pedido-itens">${(p.itens || []).map(i => `<div class="pi">${fotoMini(i)}<div><b>${escHTML(i.nome)}</b>
       <span>Qtd. ${i.quantidade} · ${reais(precoVigente(i))}</span></div></div>`).join("")}</div>
-    ${p.previsao_entrega && p.status === "Em transporte" ? `<div class="pedido-entrega"><span>🚚 Previsão de entrega: <b>${escHTML(dataEntrega(p.previsao_entrega))}</b></span>${botaoAgenda(p.pedido_id)}</div>` : ""}
-    ${(p.solicitacoes || []).map(sl => `<div class="pedido-sac"><div class="sac-linha">🧾 <b>${escHTML(sl.tipo || "")}</b> · protocolo
+    ${p.previsao_entrega && p.status === "Em transporte" ? `<div class="pedido-entrega"><span>Previsão de entrega: <b>${escHTML(dataEntrega(p.previsao_entrega))}</b></span>${botaoAgenda(p.pedido_id)}</div>` : ""}
+    ${(p.solicitacoes || []).map(sl => `<div class="pedido-sac"><div class="sac-linha"><b>${escHTML(sl.tipo || "")}</b> · protocolo
       <span class="mono">${escHTML(sl.protocolo)}</span> · ${escHTML(sl.status || "")} · ${escHTML(sl.prazo || "")}</div>
       <small>${escHTML(sl.motivo || "")}</small></div>`).join("")}
     <footer><span>Total do pedido</span><b>${reais(p.valor_total)}</b></footer></article>`;
@@ -716,7 +716,7 @@ async function investigar(arquivo) {
 }
 
 /* ───────────── Estúdio (controle da loja) ───────────── */
-const ESTUDIO_ABAS = [["painel", "Painel"], ["novo", "+ Novo produto (PDF)"], ["produtos", "Produtos"], ["previsao", "📈 Previsão"], ["dados", "📊 Dados"], ["modelo", "🧠 Modelo"], ["conversas", "💬 Conversas"], ["ajuda", "Central de ajuda"], ["mcp", "MCP"]];
+const ESTUDIO_ABAS = [["painel", "Painel"], ["novo", "+ Novo produto (PDF)"], ["produtos", "Produtos"], ["previsao", "Previsão"], ["dados", "Dados"], ["modelo", "Modelo"], ["conversas", "Conversas"], ["ajuda", "Central de ajuda"], ["mcp", "MCP"]];
 const aba = (tok, html) => { if (tok === E.tok) { const el = $("#aba"); if (el) el.innerHTML = html; } };
 function paginaEstudio([sub = "painel"], _q, tok) {
   if (!E.admin) {
@@ -724,8 +724,8 @@ function paginaEstudio([sub = "painel"], _q, tok) {
       <b>O Estúdio é do modo admin</b><span>Marque <b>Admin</b> no topo da página para ver e cadastrar dados de todos os clientes.</span></div></div>`);
     return;
   }
-  // 📞 SAC por voz (Whisper): a aba só aparece no workspace corporativo com o endpoint do Whisper e a tabela atendimentos_voz
-  const abas = E.sacVoz ? [...ESTUDIO_ABAS.slice(0, 4), ["voz", "📞 SAC por voz"], ...ESTUDIO_ABAS.slice(4)] : ESTUDIO_ABAS;
+  // SAC por voz (Whisper): a aba só aparece no workspace corporativo com o endpoint do Whisper e a tabela atendimentos_voz
+  const abas = E.sacVoz ? [...ESTUDIO_ABAS.slice(0, 4), ["voz", "SAC por voz"], ...ESTUDIO_ABAS.slice(4)] : ESTUDIO_ABAS;
   const ok = montar(tok, cabecalhoPagina({ kicker: "Controle", titulo: "Estúdio",
     sub: "Cadastre produtos a partir de fichas técnicas em PDF do fornecedor, mantenha a central de ajuda e acompanhe os índices de busca." })
     + `<div class="container"><nav class="abas">${abas.map(([k, n]) => `<a href="#/estudio/${k}" data-aba="${k}" class="${k === sub ? "ativo" : ""}">${n}</a>`).join("")}</nav><div id="aba"></div></div>${rodapeHTML()}`);
@@ -737,32 +737,38 @@ function paginaEstudio([sub = "painel"], _q, tok) {
   const fn = { painel: abaPainel, novo: abaNovo, produtos: abaProdutos, previsao: abaPrevisao, dados: abaDados, modelo: abaModelo, conversas: abaConversas, voz: abaVoz, ajuda: abaAjuda, mcp: abaMcp }[sub] || abaPainel;
   fn(tok);
 }
-/* ── 📊 Dados (admin): perguntas ao Genie com tabela e gráfico + acesso a dados sensíveis por ABAC ── */
+/* ── Dados (admin): perguntas ao Genie com tabela e gráfico + acesso a dados sensíveis por ABAC ── */
 const SUGESTOES_DADOS = ["Quantos produtos temos por departamento? Mostre em gráfico",
   "Quais os 10 produtos mais comprados? Gráfico de barras", "Receita por mês nos últimos 6 meses, em gráfico de linha",
   "O que o cliente Gustavo Dias comprou?", "Qual o nome e o e-mail dos 5 clientes que mais gastaram?"];
 async function abaDados(tok) {
+  const sug = SUGESTOES_DADOS.map(q => `<button type="button" class="chip" data-q="${escHTML(q)}">${escHTML(q)}</button>`).join("");
   aba(tok, `<div class="dados-grade">
-    <section class="painel dados-perg">
-      <h3>📊 Pergunte aos dados</h3>
-      <p class="assoc-legenda">Pergunta em português → <b>Genie</b> gera o SQL e roda no warehouse. Peça <i>"em gráfico"</i> (barras, linha ou pizza) para ver o gráfico.</p>
-      <form id="dados-form" class="dados-form"><input id="dados-input" placeholder="Ex.: quais os 10 produtos mais comprados? mostre em gráfico" autocomplete="off">
+    <section class="painel dados-chat">
+      <header class="dados-cab"><h3>Pergunte aos dados</h3>
+        <span class="assoc-legenda">Em português → o <b>Genie</b> gera o SQL e roda no warehouse. Peça <i>"em gráfico"</i> (barras, linha ou pizza).</span></header>
+      <div class="dados-msgs" id="dados-msgs">
+        <div class="dados-vazio" id="dados-vazio"><b>Comece por uma destas perguntas</b><div class="dados-sug-ini">${sug}</div></div>
+      </div>
+      <div class="dados-sug-linha oculto" id="dados-sug">${sug}</div>
+      <form id="dados-form" class="dados-form"><input id="dados-input" placeholder="Pergunte sobre vendas, produtos, clientes…" autocomplete="off">
         <button class="btn btn-lava">Perguntar</button></form>
-      <div class="dados-sug">${SUGESTOES_DADOS.map(q => `<button type="button" class="chip" data-q="${escHTML(q)}">${escHTML(q)}</button>`).join("")}</div>
-      <div id="dados-res"></div>
     </section>
     <aside class="painel dados-acesso" id="dados-acesso">${carregandoHTML()}</aside></div>`);
-  const f = $("#dados-form"), inp = $("#dados-input");
-  $$(".dados-sug [data-q]").forEach(b => b.onclick = () => { inp.value = b.dataset.q; f.requestSubmit(); });
+  const f = $("#dados-form"), inp = $("#dados-input"), caixa = $("#dados-msgs");
+  const rolar = () => { caixa.scrollTop = caixa.scrollHeight; };
+  $$(".dados-chat [data-q]").forEach(b => b.onclick = () => { inp.value = b.dataset.q; f.requestSubmit(); });
   f.onsubmit = async ev => {
     ev.preventDefault(); const q = inp.value.trim(); if (!q) return;
-    const bt = f.querySelector("button"); bt.disabled = true; bt.innerHTML = `<span class="spin"></span> Genie pensando…`;
-    const card = document.createElement("div"); card.className = "dados-card";
-    card.innerHTML = `<div class="dados-q">🙋 ${escHTML(q)}</div><div class="dados-a"><span class="spin"></span> consultando o Genie…</div>`;
-    $("#dados-res").prepend(card);
-    try { card.querySelector(".dados-a").innerHTML = dadosRespostaHTML(await api("/api/admin/dados/perguntar", { json: { pergunta: q } }), q); ligarGraficoDados(card); }
-    catch (e) { card.querySelector(".dados-a").innerHTML = `<div class="painel painel-erro"><b>Não deu</b><span>${escHTML(e.message)}</span></div>`; }
-    bt.disabled = false; bt.textContent = "Perguntar";
+    inp.value = ""; $("#dados-vazio")?.remove(); $("#dados-sug").classList.remove("oculto");
+    const bt = f.querySelector("button"); bt.disabled = true; bt.innerHTML = `<span class="spin"></span>`;
+    caixa.insertAdjacentHTML("beforeend", `<div class="dados-u">${escHTML(q)}</div>`);
+    const resp = document.createElement("div"); resp.className = "dados-b";
+    resp.innerHTML = `<div class="digitando"><span></span><span></span><span></span></div><small class="assoc-legenda">o Genie está montando o SQL…</small>`;
+    caixa.appendChild(resp); rolar();
+    try { resp.innerHTML = dadosRespostaHTML(await api("/api/admin/dados/perguntar", { json: { pergunta: q } }), q); ligarRespostaDados(resp); }
+    catch (e) { resp.innerHTML = `<div class="painel painel-erro"><b>Não deu</b><span>${escHTML(e.message)}</span></div>`; }
+    bt.disabled = false; bt.textContent = "Perguntar"; inp.focus(); rolar();
   };
   dadosAcesso();
 }
@@ -785,15 +791,15 @@ async function dadosAcesso(acao) {
     }
   }
   catch (e) { toastErro(e); if (acao !== undefined) { await dadosAcesso(); return false; } box.innerHTML = `<b>Acesso indisponível</b><p class="assoc-legenda">${escHTML(e.message)}</p>`; return; }
-  if (!d.disponivel) { box.innerHTML = `<h3>🔐 Dados sensíveis</h3><p class="assoc-legenda">${escHTML(d.motivo || "ABAC indisponível neste workspace.")}</p>`; return; }
+  if (!d.disponivel) { box.innerHTML = `<h3>Dados sensíveis</h3><p class="assoc-legenda">${escHTML(d.motivo || "ABAC indisponível neste workspace.")}</p>`; return; }
   const m = d.mascarado;
-  box.innerHTML = `<h3>🔐 Dados sensíveis (ABAC)</h3>
-    <div class="abac-status ${m ? "on" : "off"}">${m ? "🔒 Mascarados" : "🔓 Liberados"}</div>
+  box.innerHTML = `<h3>Dados sensíveis (ABAC)</h3>
+    <div class="abac-status ${m ? "on" : "off"}">${m ? "Mascarados" : "Liberados"}</div>
     <p class="assoc-legenda">Governed tag <code>${escHTML(d.tag)}</code> nas colunas abaixo → a policy <code>${escHTML(d.policy || "")}</code> mascara
       <b>tudo menos a penúltima letra</b>. Revogar = <b>pôr</b> a tag; liberar = <b>tirar</b> a tag (um job roda como o dono da tabela).</p>
-    <ul class="abac-cols">${d.colunas.map(c => `<li>${c.protegida ? "🏷️" : "▫️"} <code>${escHTML(c.coluna)}</code> ${c.protegida ? "com a tag" : "sem a tag"}</li>`).join("")}</ul>
-    <div class="botoes"><button class="btn ${m ? "btn-lava" : "btn-borda"}" id="abac-liberar" ${m ? "" : "disabled"}>🔓 Liberar acesso</button>
-      <button class="btn ${m ? "btn-borda" : "btn-lava"}" id="abac-revogar" ${m ? "disabled" : ""}>🔒 Revogar acesso</button></div>
+    <ul class="abac-cols">${d.colunas.map(c => `<li><code>${escHTML(c.coluna)}</code> ${c.protegida ? "com a tag" : "sem a tag"}</li>`).join("")}</ul>
+    <div class="botoes"><button class="btn ${m ? "btn-lava" : "btn-borda"}" id="abac-liberar" ${m ? "" : "disabled"}>Liberar acesso</button>
+      <button class="btn ${m ? "btn-borda" : "btn-lava"}" id="abac-revogar" ${m ? "disabled" : ""}>Revogar acesso</button></div>
     ${(d.amostra || []).length ? `<h4>Como os dados aparecem agora</h4><table class="tabela-ml abac-amostra"><thead><tr><th>Cliente</th><th>Nome</th><th>E-mail</th></tr></thead>
       <tbody>${d.amostra.map(a => `<tr><td class="mono">${escHTML(a.cliente_id)}</td><td class="mono">${escHTML(a.nome)}</td><td class="mono">${escHTML(a.email)}</td></tr>`).join("")}</tbody></table>` : ""}
     ${d.sql ? `<details class="fc-sql" open><summary>SQL executado pelo ${escHTML(d.executado_por || "")}${d.ms ? ` · ${(d.ms / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} s` : ""}</summary><pre class="sql">${escHTML(d.sql.join(";\n") + ";")}</pre>
@@ -808,22 +814,38 @@ async function dadosAcesso(acao) {
 const ehNumero = v => v !== null && v !== "" && !isNaN(Number(v));
 function dadosRespostaHTML(r, q) {
   const cols = r.colunas || [], linhas = r.linhas || [];
-  const selo = r.mascarado === true ? `<span class="abac-selo on">🔒 dados sensíveis mascarados</span>` : r.mascarado === false ? `<span class="abac-selo off">🔓 dados sensíveis liberados</span>` : "";
+  const selo = r.mascarado === true ? `<span class="abac-selo on">dados sensíveis mascarados</span>` : r.mascarado === false ? `<span class="abac-selo off">dados sensíveis liberados</span>` : "";
   const fmt = v => ehNumero(v) && String(v).length < 16 ? Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) : String(v ?? "");
-  const tabela = cols.length ? `<div class="dados-tab-caixa"><table class="tabela-ml dados-tab"><thead><tr>${cols.map(c => `<th>${escHTML(c)}</th>`).join("")}</tr></thead>
-    <tbody>${linhas.map(l => `<tr>${l.map(v => `<td class="${ehNumero(v) ? "num" : ""}">${escHTML(fmt(v))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : "";
   const podeGrafico = cols.length >= 2 && linhas.length >= 2 && cols.some((c, i) => linhas.every(l => l[i] === null || ehNumero(l[i])));
-  return `${selo}${r.texto ? `<div class="dados-texto">${md(r.texto)}</div>` : ""}
-    ${podeGrafico ? `<div class="dados-graf" data-cols="${escHTML(JSON.stringify(cols))}" data-linhas="${escHTML(JSON.stringify(linhas.slice(0, 30)))}"
-      data-q="${escHTML(q)}" data-auto="${r.pediu_grafico ? 1 : 0}">${r.pediu_grafico ? "" : `<button class="btn btn-borda btn-sm" data-gerar-grafico>📊 Gerar gráfico</button>`}</div>` : ""}
-    ${tabela}${!cols.length && !r.texto ? `<p class="assoc-legenda">O Genie não trouxe resultado.</p>` : ""}
-    ${r.sql ? `<details class="fc-sql"><summary>SQL gerado pelo Genie · ${((r.ms || 0) / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} s</summary><pre class="sql">${escHTML(r.sql)}</pre></details>` : ""}`;
+  const tabela = cols.length ? `<div class="dados-tab-caixa"><table class="tabela-ml dados-tab"><thead><tr>${cols.map(c => `<th>${escHTML(c)}</th>`).join("")}</tr></thead>
+    <tbody>${linhas.map(l => `<tr>${l.map(v => `<td class="${ehNumero(v) ? "num" : ""}">${escHTML(fmt(v))}</td>`).join("")}</tr>`).join("")
+      || `<tr><td colspan="${cols.length}">Nenhuma linha.</td></tr>`}</tbody></table></div>` : "";
+  const vistas = [podeGrafico && ["grafico", "Gráfico"], cols.length && ["tabela", `Tabela (${linhas.length})`], r.sql && ["sql", "SQL"]].filter(Boolean);
+  const inicial = podeGrafico && r.pediu_grafico ? "grafico" : cols.length ? "tabela" : vistas[0] && vistas[0][0];
+  const seg = ((r.ms || 0) / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+  return `<div class="dados-meta">${selo}<span>Genie · ${seg} s</span></div>
+    ${r.texto ? `<div class="dados-texto curto">${md(r.texto)}</div><button type="button" class="link dados-mais oculto">mostrar mais</button>` : ""}
+    ${!cols.length && !r.texto ? `<p class="assoc-legenda">O Genie não trouxe resultado.</p>` : ""}
+    ${vistas.length ? `<div class="dados-vistas">${vistas.map(([k, n]) => `<button type="button" data-vista="${k}" class="${k === inicial ? "sel" : ""}">${n}</button>`).join("")}</div>` : ""}
+    ${podeGrafico ? `<div class="dados-vista ${inicial === "grafico" ? "" : "oculto"}" data-vista="grafico"><div class="dados-graf" data-cols="${escHTML(JSON.stringify(cols))}"
+      data-linhas="${escHTML(JSON.stringify(linhas.slice(0, 30)))}" data-q="${escHTML(q)}"></div></div>` : ""}
+    ${cols.length ? `<div class="dados-vista ${inicial === "tabela" ? "" : "oculto"}" data-vista="tabela">${tabela}</div>` : ""}
+    ${r.sql ? `<div class="dados-vista ${inicial === "sql" ? "" : "oculto"}" data-vista="sql"><pre class="sql">${escHTML(r.sql)}</pre></div>` : ""}`;
 }
-function ligarGraficoDados(card) {
-  const g = card.querySelector(".dados-graf"); if (!g) return;
-  const desenhar = () => { g.innerHTML = graficoDadosSVG(JSON.parse(g.dataset.cols), JSON.parse(g.dataset.linhas), g.dataset.q); };
-  if (g.dataset.auto === "1") desenhar();
-  const b = g.querySelector("[data-gerar-grafico]"); if (b) b.onclick = desenhar;
+function ligarRespostaDados(resp) {
+  const g = resp.querySelector(".dados-graf");
+  const desenhar = () => { if (g && !g.dataset.ok) { g.innerHTML = graficoDadosSVG(JSON.parse(g.dataset.cols), JSON.parse(g.dataset.linhas), g.dataset.q); g.dataset.ok = 1; } };
+  if (g && !resp.querySelector('.dados-vista[data-vista="grafico"]').classList.contains("oculto")) desenhar();
+  $$(".dados-vistas button", resp).forEach(b => b.onclick = () => {
+    $$(".dados-vistas button", resp).forEach(x => x.classList.toggle("sel", x === b));
+    $$(".dados-vista", resp).forEach(v => v.classList.toggle("oculto", v.dataset.vista !== b.dataset.vista));
+    if (b.dataset.vista === "grafico") desenhar();
+  });
+  const t = resp.querySelector(".dados-texto"), mais = resp.querySelector(".dados-mais");
+  if (t && mais && t.scrollHeight > t.clientHeight + 4) {
+    mais.classList.remove("oculto");
+    mais.onclick = () => { const curto = t.classList.toggle("curto"); mais.textContent = curto ? "mostrar mais" : "mostrar menos"; };
+  }
 }
 // gráfico a partir do resultado: 1ª coluna de texto = rótulo, 1ª numérica (que não seja id/ano/mês) = valor;
 // linha (datas ou "linha" na pergunta), pizza ("pizza"/"rosca") ou barras; passe o mouse para ver o valor
@@ -863,14 +885,14 @@ function graficoDadosSVG(cols, linhas, q) {
   return `${titulo}<div class="dados-barras">${pts.map(p => `<div class="barra" title="${escHTML(p.r)}: ${fmt(p.v)}"><span class="rot">${escHTML(p.r)}</span>
     <span class="dados-trilho"><span class="enche" style="width:${(100 * Math.max(0, p.v) / max).toFixed(1)}%"></span></span><b>${fmt(p.v)}</b></div>`).join("")}</div>`;
 }
-/* ── 🧠 Modelo do Assistente (admin): roteador do Unity Gateway × modelo direto ── */
+/* ── Modelo do Assistente (admin): roteador do Unity Gateway × modelo direto ── */
 async function abaModelo(tok) {
   aba(tok, carregandoHTML());
   let mod;
   try { mod = await api("/api/admin/modelo"); } catch (e) { aba(tok, `<div class="painel painel-erro"><b>Modelo indisponível</b><span>${escHTML(e.message)}</span></div>`); return; }
   const atual = mod.opcoes.find(o => o.id === mod.atual) || { nome: mod.atual };
   aba(tok, `<section class="painel painel-modelo">
-    <h3>🧠 Modelo do Assistente</h3>
+    <h3>Modelo do Assistente</h3>
     <p class="assoc-legenda">Escolha qual modelo responde no Assistente <b>agora</b> (vale para todos, até o App reiniciar).</p>
     <div class="modelo-atual">Em uso: <b>${escHTML(atual.nome)}</b><br><code>${escHTML(mod.atual)}</code></div>
     <div class="modelo-opcoes">${mod.opcoes.map(o => `<label class="modelo-op ${o.id === mod.atual ? "sel" : ""}">
@@ -878,13 +900,13 @@ async function abaModelo(tok) {
       <span><b>${escHTML(o.nome)}</b><code>${escHTML(o.id)}</code></span></label>`).join("")}</div>
     <div class="botoes"><button class="btn btn-lava" id="trocar-modelo">Usar este modelo</button></div>
     <table class="tabela-ml modelo-tab"><thead><tr><th></th><th>Roteador (<code>assistente_llm</code>)</th><th>Modelo direto</th></tr></thead><tbody>
-      <tr><td>Balanço 50/50 (selo 🔀 alterna)</td><td>✅</td><td>—</td></tr>
-      <tr><td>Fallback se o modelo falhar</td><td>✅</td><td>—</td></tr>
-      <tr><td>Inference table (<code>assistente_llm_payload</code>)</td><td>✅</td><td>—</td></tr>
-      <tr><td>Service policies do Unity Gateway (selo 🛡️ Unity Gateway)</td><td>✅</td><td>—</td></tr>
-      <tr><td>Guardrails do grafo do App (dados sensíveis, jailbreak, juiz)</td><td>✅</td><td>✅</td></tr>
+      <tr><td>Balanço 50/50 (o selo do modelo alterna)</td><td>✓</td><td>—</td></tr>
+      <tr><td>Fallback se o modelo falhar</td><td>✓</td><td>—</td></tr>
+      <tr><td>Inference table (<code>assistente_llm_payload</code>)</td><td>✓</td><td>—</td></tr>
+      <tr><td>Service policies do Unity Gateway (selo "Unity Gateway")</td><td>✓</td><td>—</td></tr>
+      <tr><td>Guardrails do grafo do App (dados sensíveis, jailbreak, juiz)</td><td>✓</td><td>✓</td></tr>
     </tbody></table>
-    <p class="assoc-legenda">Teste: troque o modelo e peça no Assistente <i>"Monte um setup gamer até R$ 3 mil"</i> (o selo 🔀 mostra qual modelo respondeu) e <i>"A loja X vende mais barato?"</i> (com o roteador e a service policy, selo 🛡️).</p>
+    <p class="assoc-legenda">Teste: troque o modelo e peça no Assistente <i>"Monte um setup gamer até R$ 3 mil"</i> (o selo do roteador mostra qual modelo respondeu) e <i>"A loja X vende mais barato?"</i> (com o roteador e a service policy, selo "Unity Gateway").</p>
   </section>`);
   $$("input[name=modelo]").forEach(r => r.onchange = () => $$(".modelo-op").forEach(l => l.classList.toggle("sel", l.contains(r) && r.checked)));
   $("#trocar-modelo").onclick = async () => {
@@ -894,14 +916,14 @@ async function abaModelo(tok) {
     catch (e) { toastErro(e); }
   };
 }
-/* ── 💬 Conversas (admin): todas as perguntas do Assistente, de todos os clientes ── */
-const NOME_AGENTE = { vendas: "🛍️ Vendas", pos_venda: "📦 Pós-venda", analista: "📊 Analista" };
+/* ── Conversas (admin): todas as perguntas do Assistente, de todos os clientes ── */
+const NOME_AGENTE = { vendas: "Vendas", pos_venda: "Pós-venda", analista: "Analista" };
 async function abaConversas(tok) {
   aba(tok, carregandoHTML());
   let d;
   try { d = await api("/api/admin/conversas"); } catch (e) { aba(tok, `<div class="painel painel-erro"><b>Conversas indisponíveis</b><span>${escHTML(e.message)}</span></div>`); return; }
   if (!d.ativa) { aba(tok, `<div class="painel"><b>Sem Lakebase</b><p class="assoc-legenda">As conversas ficam na tabela <code>loja.conversas</code> do Lakebase; sem ele, nada é gravado.</p></div>`); return; }
-  // uma linha por pergunta: junta cada pergunta (🙋) com a resposta (🤖) que veio logo depois, na mesma conversa
+  // uma linha por pergunta: junta cada pergunta () com a resposta () que veio logo depois, na mesma conversa
   const msgs = [...(d.mensagens || [])].sort((a, b) => String(a.criado_em).localeCompare(String(b.criado_em)));
   const turnos = [];
   msgs.forEach(m => {
@@ -914,21 +936,21 @@ async function abaConversas(tok) {
   const limpo = t => String(t || "").replace(/\*\*|__|`/g, "").replace(/\s+/g, " ").trim();
   const nBloq = turnos.filter(t => t.agente === "bloqueado").length;
   aba(tok, `<section class="painel conversas-admin">
-    <h3>💬 Todas as perguntas do Assistente · todos os clientes</h3>
+    <h3>Todas as perguntas do Assistente · todos os clientes</h3>
     <p class="assoc-legenda">${numPT(turnos.length)} perguntas (as mais recentes primeiro), ${numPT(nBloq)} bloqueadas pelos guardrails (em vermelho; não entram na memória do cliente).
       Fonte: <code>loja.conversas</code> no Lakebase desta instalação (cada <code>INSTALAR</code> cria um Lakebase novo), também lida no Lakehouse pelo catálogo registrado.</p>
     <button class="btn btn-borda btn-sm" id="conv-atualizar">↻ Atualizar</button>
-    <table class="tabela-ml conv-tab"><thead><tr><th>Quando</th><th>Cliente</th><th>🙋 Pergunta</th><th>🤖 Resposta</th><th>Agente</th><th>Modelo</th></tr></thead>
+    <table class="tabela-ml conv-tab"><thead><tr><th>Quando</th><th>Cliente</th><th>Pergunta</th><th>Resposta</th><th>Agente</th><th>Modelo</th></tr></thead>
     <tbody>${turnos.map(t => `<tr class="${t.agente === "bloqueado" ? "bloq" : ""}">
       <td class="mono">${escHTML(quando(t.criado_em))}</td><td>${escHTML(t.cliente_nome || t.cliente_id || "")}</td>
       <td class="conv-perg">${escHTML(limpo(t.pergunta).slice(0, 220))}</td>
       <td class="conv-resp">${escHTML(limpo(t.resposta).slice(0, 220))}${limpo(t.resposta).length > 220 ? "…" : ""}</td>
-      <td>${t.agente === "bloqueado" ? "🛡️ bloqueado" : escHTML(NOME_AGENTE[t.agente] || t.agente || "")}</td>
+      <td>${t.agente === "bloqueado" ? "Bloqueado" : escHTML(NOME_AGENTE[t.agente] || t.agente || "")}</td>
       <td class="mono">${escHTML(String(t.modelo || "").split(" (via")[0])}</td></tr>`).join("")
       || `<tr><td colspan="6">Nenhuma pergunta ainda.</td></tr>`}</tbody></table></section>`);
   const b = $("#conv-atualizar"); if (b) b.onclick = () => abaConversas(tok);
 }
-/* ── 📞 SAC por voz (Whisper no Model Serving + ai_classify / ai_analyze_sentiment / ai_extract) ── */
+/* ── SAC por voz (Whisper no Model Serving + ai_classify / ai_analyze_sentiment / ai_extract) ── */
 async function gravacaoParaWav(blob) {
   // o navegador grava em webm/opus (Chrome) ou mp4 (Safari): converte para WAV 16 kHz mono, que o Whisper lê sem ffmpeg
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -965,12 +987,12 @@ async function abaVoz(tok) {
     <div class="voz-topo"><h3>SAC por voz com <b>Whisper</b></h3><button class="btn btn-borda btn-sm" id="voz-atualizar" title="Recarrega o histórico e as solicitações (inclusive as abertas pelo Assistente)">↻ Atualizar</button></div>
     <p class="assoc-legenda">Áudio → <b>Whisper</b> (endpoint de Model Serving) → <code>ai_classify</code>, <code>ai_analyze_sentiment</code> e <code>ai_extract</code> → tabela <code>atendimentos_voz</code> (também no Genie).</p>
     <div class="voz-blocos">
-      <div class="voz-bloco"><h4>🎙️ Gravar agora</h4>
+      <div class="voz-bloco"><h4>Gravar agora</h4>
         <p class="assoc-legenda">Fale como um cliente ligando para o SAC (ex.: <i>"o pedido P 0 0 1 1 6 5 5 está atrasado"</i>).</p>
         ${podeGravar ? `<button class="btn btn-lava" id="voz-gravar">● Gravar</button> <span class="mono" id="voz-tempo"></span>`
                      : `<p class="assoc-legenda">Este navegador não permite gravar áudio.</p>`}
         <div id="voz-gravado"></div></div>
-      <div class="voz-bloco"><h4>📁 Enviar um arquivo</h4>
+      <div class="voz-bloco"><h4>Enviar um arquivo</h4>
         <form id="voz-form" class="fc-form"><label class="drop">Escolher áudio (.wav / .mp3)<input type="file" name="audio" accept="audio/*" hidden></label>
           <button class="btn btn-borda" type="submit">Transcrever e analisar</button></form></div>
     </div>
@@ -980,7 +1002,7 @@ async function abaVoz(tok) {
     <p class="assoc-legenda"><b>Cadastrar no SAC</b> abre a solicitação ligada ao <b>pedido</b> (confira o número: o Whisper pode errar dígitos); ela aparece em <i>Meus pedidos</i> do cliente.</p>
     <table class="tabela-ml voz-tab">${VOZ_CAB}
     <tbody>${linhas.map(vozLinhaHTML).join("") || `<tr><td colspan="7">Nenhum atendimento processado ainda.</td></tr>`}</tbody></table>
-    <h4>🧾 Solicitações do SAC · todos os clientes</h4>
+    <h4>Solicitações do SAC · todos os clientes</h4>
     <table class="tabela-ml"><thead><tr><th>Protocolo</th><th>Cliente</th><th>Pedido</th><th>Tipo</th><th>Status</th><th>Prazo</th><th>Motivo</th></tr></thead>
     <tbody>${(sols.solicitacoes || []).map(sl => `<tr><td class="mono">${escHTML(sl.protocolo)}</td><td>${escHTML(sl.cliente_nome || "")}</td>
       <td class="mono">${escHTML(sl.pedido_id || "")}</td><td>${escHTML(sl.tipo || "")}</td><td>${escHTML(sl.status || "")}</td>
@@ -1021,7 +1043,7 @@ async function abaVoz(tok) {
 const TIPO_POR_CATEGORIA = { troca: "Troca", defeito: "Reclamação", garantia: "Garantia", atraso: "Reclamação", cancelamento: "Devolução" };
 function vozLinhaHTML(a) {
   const nome = String(a.arquivo || "").split("/").pop();
-  const sac = a.protocolo ? `<span class="status ok">🧾 ${escHTML(a.protocolo)}</span>`
+  const sac = a.protocolo ? `<span class="status ok">${escHTML(a.protocolo)}</span>`
     : (a.categoria && a.categoria !== "elogio") ? `<button class="btn btn-sm btn-borda" data-voz-cadastrar data-arquivo="${escHTML(a.arquivo || "")}"
         data-pedido="${escHTML(a.pedido_id || "")}" data-tipo="${escHTML(TIPO_POR_CATEGORIA[a.categoria] || "Reclamação")}"
         data-motivo="${escHTML(a.motivo || a.transcricao || "")}">Cadastrar no SAC</button>` : "—";
@@ -1045,11 +1067,11 @@ async function vozEnviarSAC(f) {
   const bt = f.querySelector("button"); bt.disabled = true; bt.innerHTML = `<span class="spin"></span>`;
   try {
     const r = await api("/api/voz/solicitacao", { json: { arquivo: f.dataset.arquivo, pedido_id: f.pedido_id.value, tipo: f.tipo.value, motivo: f.motivo.value } });
-    f.closest("td").innerHTML = `<span class="status ok">🧾 ${escHTML(r.protocolo)}</span><br><small>${escHTML(r.tipo)} · ${escHTML(r.cliente_nome || r.cliente_id)} · ${escHTML(r.prazo)}</small>`;
+    f.closest("td").innerHTML = `<span class="status ok">${escHTML(r.protocolo)}</span><br><small>${escHTML(r.tipo)} · ${escHTML(r.cliente_nome || r.cliente_id)} · ${escHTML(r.prazo)}</small>`;
   } catch (e) { bt.disabled = false; bt.textContent = "Abrir solicitação"; toastErro(e); }
 }
 
-/* ── 📈 Previsão de vendas sob demanda (ai_forecast) ── */
+/* ── Previsão de vendas sob demanda (ai_forecast) ── */
 async function abaPrevisao(tok) {
   aba(tok, carregandoHTML());
   let op;
@@ -1066,7 +1088,7 @@ async function abaPrevisao(tok) {
       <label>Granularidade<select name="granularidade"><option value="dia">Diária</option><option value="semana">Semanal</option></select></label>
       <label>Histórico<select name="historico_dias"><option value="90">90 dias</option><option value="180" selected>180 dias</option><option value="365">1 ano</option></select></label>
       <label>Horizonte<select name="horizonte"><option value="8">8 períodos</option><option value="14">14 períodos</option><option value="30" selected>30 períodos</option></select></label>
-      <button class="btn btn-lava" type="submit">📈 Prever com ai_forecast</button>
+      <button class="btn btn-lava" type="submit">Prever com ai_forecast</button>
     </form>
     <div id="fc-res"></div></section>`);
   const f = $("#fc-form");
@@ -1087,7 +1109,7 @@ async function abaPrevisao(tok) {
     if (corpo.filtro_tipo === "total") delete corpo.valor;
     try { $("#fc-res").innerHTML = previsaoHTML(await api("/api/previsao", { json: corpo }), corpo); ligarDicaPrevisao($("#fc-res")); }
     catch (e) { $("#fc-res").innerHTML = `<div class="painel painel-erro"><b>Falhou</b><span>${escHTML(e.message)}</span></div>`; }
-    b.disabled = false; b.innerHTML = "📈 Prever com ai_forecast";
+    b.disabled = false; b.innerHTML = "Prever com ai_forecast";
   };
 }
 // passa o mouse no gráfico da previsão: linha-guia, ponto e a caixinha com data, valor e intervalo
@@ -1137,7 +1159,7 @@ function previsaoHTML(r, par) {
   const nx = Math.min(8, datas.length), passo = Math.max(1, Math.floor(datas.length / nx));
   const somaPrev = prev.reduce((a, x) => a + (+x.valor || 0), 0), somaUlt = completos.slice(-prev.length).reduce((a, x) => a + (+x.valor || 0), 0);
   const varPct = somaUlt ? ((somaPrev / somaUlt - 1) * 100) : 0;
-  const aviso = r.aviso ? `<div class="painel fc-aviso">⚠️ ${escHTML(r.aviso)}</div>` : "";
+  const aviso = r.aviso ? `<div class="painel fc-aviso">${escHTML(r.aviso)}</div>` : "";
   return `${aviso}<div class="fc-kpis"><div><span>Previsto nos próximos ${prev.length} períodos</span><b>${fmt(somaPrev)}</b></div>
       <div><span>Mesmo nº de períodos anteriores</span><b>${fmt(somaUlt)}</b></div>
       <div><span>Variação</span><b class="${varPct >= 0 ? "pos" : "neg"}">${varPct >= 0 ? "+" : ""}${varPct.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</b></div>
@@ -1165,7 +1187,7 @@ function painelMLHTML(m) {
   const melhor = Math.max(...m.placar.map(p => p.hit_rate_10 || 0));
   const linhas = m.placar.map(p => {
     const top = (p.hit_rate_10 || 0) === melhor;
-    return `<tr class="${top ? "vencedor" : ""}"><td>${top ? "🏆 " : ""}${escHTML(p.abordagem)}</td>
+    return `<tr class="${top ? "vencedor" : ""}"><td>${escHTML(p.abordagem)}</td>
       <td><div class="barra-ml"><i style="width:${Math.round(100 * (p.hit_rate_10 || 0) / (melhor || 1))}%"></i><b>${(100 * (p.hit_rate_10 || 0)).toFixed(1)}%</b></div></td>
       <td>${(p.ndcg_10 || 0).toFixed(3)}</td><td>${(100 * (p.precision_10 || 0)).toFixed(2)}%</td></tr>`;
   }).join("");
@@ -1181,7 +1203,7 @@ function painelMLHTML(m) {
         <div><dt>Modelo no Unity Catalog</dt><dd>${escHTML(m.modelo_uc || "—")}</dd></div>
         <div><dt>Experimento MLflow</dt><dd>${m.experimento_url ? `<a href="${escHTML(m.experimento_url)}" target="_blank" rel="noopener">${escHTML(m.experimento)}</a>` : "—"}</dd></div>
         <div><dt>Modelo servido (Model Serving)</dt><dd>${m.endpoint ? `<span class="pontinho ${m.endpoint.pronto ? "ok" : "alerta"}"></span> <a href="${escHTML(m.endpoint.url || "#")}" target="_blank" rel="noopener"><code>${escHTML(m.endpoint.nome)}</code></a> · ${escHTML(m.endpoint.estado || "—")}${m.endpoint.modelo ? ` · ${escHTML(m.endpoint.modelo)}` : ""}` : "— (o App lê a tabela recomendacoes_personalizadas)"}</dd></div>
-        ${m.endpoint ? `<div><dt>Última recomendação veio de</dt><dd>${m.endpoint.ultima_origem === "endpoint" ? "🟢 endpoint (tempo real)" : m.endpoint.ultima_origem === "tabela" ? "🟡 tabela (reserva: endpoint frio ou indisponível)" : "—"}</dd></div>` : ""}
+        ${m.endpoint ? `<div><dt>Última recomendação veio de</dt><dd>${m.endpoint.ultima_origem === "endpoint" ? "endpoint (tempo real)" : m.endpoint.ultima_origem === "tabela" ? "tabela (reserva: endpoint frio ou indisponível)" : "—"}</dd></div>` : ""}
         <div><dt>Onde aparece</dt><dd>Fileira “Recomendado para você” e ferramenta MCP <code>recomendar_para_cliente</code></dd></div></dl></div></div>
   </section>`;
 }

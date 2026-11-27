@@ -49,7 +49,7 @@ transcreve as ligações; depois as funções de IA estruturam cada atendimento:
   Model Serving. Precisa de saída para o Hugging Face no momento da instalação. Se algo faltar, as etapas são puladas e
   o App segue igual.
 
-**No App: marque Admin no topo → Estúdio → 📞 SAC por voz** (a aba só aparece quando o Whisper e a tabela existem; no modo admin
+**No App: marque Admin no topo → Estúdio → SAC por voz** (a aba só aparece quando o Whisper e a tabela existem; no modo admin
 ela mostra as ligações de **todos** os clientes):
 - **🎙️ Gravar agora:** grave no microfone do navegador (até 60 s); o áudio vira WAV 16 kHz no próprio navegador, passa
   pelo Whisper e pela análise, e entra no histórico.
@@ -111,7 +111,7 @@ evento vai para `guardrail_eventos` (categoria `unity_gateway`) e a mensagem **n
 | C1.1 | *"A loja X vende esse sofá mais barato?"* | selo **🛡️ Unity Gateway · service policy**; na trilha 🕸️, *bloqueado por uma service policy* |
 | C1.2 | *"Monte um setup gamer até R$ 3 mil"* | resposta normal (a policy não bloqueia o que é da loja) |
 
-> Para comparar: no modo **Admin**, *Estúdio → 🧠 Modelo* → um modelo direto (`system.ai.*`) e repita o C1.1. Sem o
+> Para comparar: no modo **Admin**, *Estúdio → Modelo* → um modelo direto (`system.ai.*`) e repita o C1.1. Sem o
 > roteador a policy não age (quem responde é só o guardrail do grafo do App).
 
 ```sql

@@ -35,7 +35,7 @@ TAG = "dados_sensiveis"                 # governed tag (vale para a conta toda; 
 COLUNAS = [("clientes", "nome"), ("clientes", "email")]
 FUNCAO = f"{CATALOG}.{SCHEMA}.mascara_penultima"
 POLICY = "mascara_dados_sensiveis"
-ABAC_OK, VALOR_TAG, erro_policy = False, None, ""
+ABAC_OK, VALOR_TAG = False, None
 
 # 1) governed tag (tag policy): cria se não existir; se já existir com valores permitidos, usa o primeiro
 try:
@@ -71,24 +71,37 @@ if TAG:
             print(f"⚠️ função de máscara: {str(e)[:200]}")
             TAG = None
 
-# 3) policy ABAC no schema: qualquer coluna com a tag é mascarada para todos
+# 3) policy ABAC no schema: qualquer coluna com a tag é mascarada para todos.
+#    DROP + CREATE (a doc não mostra OR REPLACE para column mask); a governed tag recém-criada pode levar alguns
+#    segundos para valer, então tenta de novo; todos os erros são mostrados.
+import time as _time
+erros_policy = []
 if TAG:
-    for principal in ("`account users`", "'All Users'"):
-        try:
-            spark.sql(f"""CREATE OR REPLACE POLICY {POLICY} ON SCHEMA {CATALOG}.{SCHEMA}
-                          COMMENT 'Mascara (tudo menos a penúltima letra) as colunas com a governed tag {TAG}'
-                          COLUMN MASK {FUNCAO}
-                          TO {principal}
-                          FOR TABLES
-                          MATCH COLUMNS has_tag('{TAG}') AS c
-                          ON COLUMN c""")
-            ABAC_OK = True
-            print(f"＋ policy ABAC {POLICY} em {CATALOG}.{SCHEMA} (TO {principal})")
+    corpo = (f"COLUMN MASK {FUNCAO} TO `account users` FOR TABLES "
+             f"MATCH COLUMNS has_tag('{TAG}') AS c ON COLUMN c")
+    variantes = [f"CREATE POLICY {POLICY} ON SCHEMA {CATALOG}.{SCHEMA} "
+                 f"COMMENT 'Mascara tudo menos a penultima letra das colunas com a governed tag {TAG}' {corpo}",
+                 f"CREATE POLICY {POLICY} ON SCHEMA {CATALOG}.{SCHEMA} {corpo}"]
+    for tentativa in range(3):
+        for sql in variantes:
+            try:
+                spark.sql(f"DROP POLICY IF EXISTS {POLICY} ON SCHEMA {CATALOG}.{SCHEMA}")
+            except Exception as e:
+                erros_policy.append(f"DROP POLICY: {str(e)[:200]}")
+            try:
+                spark.sql(sql)
+                ABAC_OK = True
+                print(f"＋ policy ABAC {POLICY} em {CATALOG}.{SCHEMA} (TO `account users`)")
+                break
+            except Exception as e:
+                erros_policy.append(str(e).split("\n")[0][:300])
+        if ABAC_OK:
             break
-        except Exception as e:
-            erro_policy = str(e)[:240]
+        _time.sleep(15)   # governed tag recém-criada: espera propagar e tenta de novo
     if not ABAC_OK:
-        print(f"⚠️ não consegui criar a policy ABAC (o workspace precisa de ABAC e de serverless/DBR 16.4+): {erro_policy}")
+        print("⚠️ não consegui criar a policy ABAC (precisa de ABAC no workspace, serverless/DBR 16.4+ e MANAGE no schema). Erros:")
+        for e in dict.fromkeys(erros_policy):
+            print("   •", e)
 
 # 4) começa PROTEGIDO: põe a tag nas colunas (no App, "Liberar" tira a tag)
 if ABAC_OK:

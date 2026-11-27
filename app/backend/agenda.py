@@ -63,7 +63,7 @@ def _pedido(pedido_id: str, cliente_id: str) -> dict | None:
 
 def _evento(ped: dict) -> dict:
     dia = date.fromisoformat(ped["previsao"])
-    titulo = f"📦 Chega hoje: pedido {S.MARCA} {ped['pedido_id']}"
+    titulo = f"Chega hoje: pedido {S.MARCA} {ped['pedido_id']}"
     descricao = (f"Previsão de entrega do seu pedido {ped['pedido_id']} na {S.MARCA}.\n\nItens:\n- " + "\n- ".join(ped["itens"][:10])
                  + f"\n\nValor: R$ {float(ped['valor_total'] or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
                  + f"\nAcompanhe em https://{S.dominio()}/pedidos")
